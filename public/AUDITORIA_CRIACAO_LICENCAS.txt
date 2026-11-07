@@ -1,0 +1,268 @@
+================================================================================
+RELATORIO DE AUDITORIA TECNICA (EXCLUSIVAMENTE LEITURA)
+FLUXO DE CRIACAO DE LICENCAS — ZOD LICENSE MANAGER
+================================================================================
+Data da Auditoria: 06 de novembro de 2026
+Ambiente: AI Studio Workspace / Node.js Runtime / Cloudflare Worker v3.1
+Projeto Firebase: dashboard-proxy-menu
+API Cloudflare Worker: https://dashboard-proxy-api.gabrieldacechen6.workers.dev
+Diretiva: Auditoria estrita de leitura (sem alteracoes de codigo ou escritas na API)
+================================================================================
+
+1. INSPECAO DO COMPONENTE: src/components/CreateLicenseModal.tsx
+--------------------------------------------------------------------------------
+1.1 Todos os Campos do Formulario:
+O componente gerencia os seguintes estados e campos de formulario (linhas 25 a 34):
+
+1. clientName (Nome do Cliente):
+   - Elemento: <Input> (linha 222).
+   - Tipo: Texto (string).
+   - Placeholder: "Acme Corp / Enterprise".
+   - Validacao: Marcado como required.
+
+2. orderReference (Referencia do Pedido / Fatura):
+   - Elemento: <Input> (linha 229).
+   - Tipo: Texto (string).
+   - Placeholder: "ORD-2026-904".
+   - Validacao: Opcional.
+
+3. notes (Notas Administrativas Internas):
+   - Elemento: <Textarea> (linha 380).
+   - Tipo: Texto multilinha (string).
+   - Validacao: Opcional.
+
+4. durationPreset (Selecao de Duracao):
+   - Elemento: Seletor segmentado com 5 botoes (linhas 242 a 260).
+   - Opcoes: '1d', '7d', '15d', '30d', 'custom'. Valor padrao: '30d'.
+
+5. customDurationValue e customDurationUnit (Duracao Customizada):
+   - Exibidos condicionalmente quando durationPreset === 'custom' (linhas 263 a 287).
+   - customDurationValue: <Input type="number">, min="1", valor padrao 30.
+   - customDurationUnit: <Select>, opcoes: 'days', 'hours', 'minutes', 'seconds'. Valor padrao: 'days'.
+
+6. deviceLimitPreset e customDeviceLimit (Limite de Dispositivos Conectados):
+   - Elemento: Seletor segmentado com 5 botoes (linhas 295 a 310).
+   - Opcoes: '1', '2', '3', 'unlimited', 'custom'. Valor padrao: '1'.
+   - Campo customizado condicional: <Input type="number">, min="1" (linhas 312 a 323). Valor padrao: 5.
+
+7. activationMode (Modo de Ativacao):
+   - Elemento: Dois botoes de radio com inputs nativos (linhas 331 a 377).
+   - Opcoes:
+     * 'first_use' ("On First Use" — o timer inicia no primeiro handshake do APK).
+     * 'immediate' ("Immediate Activation" — o timer inicia no ato da criacao).
+   - Valor padrao: 'first_use'.
+
+1.2 Validacoes Obrigatorias:
+- Validacao de clientName (Linha 92):
+  if (!clientName.trim()) {
+    setError('Client name is required.');
+    return;
+  }
+  Se a string for vazia ou composta apenas de espacos, a submissao e bloqueada
+  no cliente antes de qualquer chamada de rede e a mensagem de erro e exibida.
+- Validacao Numerica dos Campos Custom:
+  * customDurationValue: Forcado a ser inteiro positivo via Math.max(1, parseInt(e.target.value) || 1) (linha 270).
+  * customDeviceLimit: Forcado a ser inteiro positivo via Math.max(1, parseInt(e.target.value) || 1) (linha 319).
+- Bloqueio contra Submissoes Duplas:
+  O botao de submissao recebe disabled={loading} (linha 392), impedindo cliques
+  concorrentes enquanto a requisicao estiver pendente.
+
+1.3 Comportamento das Opcoes Custom:
+- Duracao Customizada: Ao clicar em "Custom", abre-se um sub-grid com dois campos:
+  um campo numerico de quantidade e um menu dropdown de unidades (Days, Hours, Minutes, Seconds).
+- Limite Customizado: Ao clicar em "Custom", abre-se um campo numerico de quantidade.
+
+1.4 Conversao das Duracoes para Unidades de Tempo:
+Executada pela funcao getComputedDuration() (linhas 60 a 73):
+- '1d'      -> { duration: 1, durationUnit: 'days' }
+- '7d'      -> { duration: 7, durationUnit: 'days' }
+- '15d'     -> { duration: 15, durationUnit: 'days' }
+- '30d'     -> { duration: 30, durationUnit: 'days' }
+- 'custom'  -> { duration: Number(customDurationValue) || 1, durationUnit: customDurationUnit }
+Conclusao: O frontend envia o par { duration: number, durationUnit: string }.
+Ele nao converte previamente tudo para segundos (ex: 30 dias sao enviados como 30 e unidade 'days').
+
+1.5 Conversao do Limite de Dispositivos:
+Executada pela funcao getComputedDeviceLimit() (linhas 75 a 88):
+- '1'         -> 1
+- '2'         -> 2
+- '3'         -> 3
+- 'unlimited' -> -1
+- 'custom'    -> Number(customDeviceLimit) || 1
+Conclusao: Dispositivos ilimitados sao representados como o inteiro -1.
+
+1.6 Valor Enviado para o Tipo de Ativacao:
+O estado activationMode armazena e envia diretamente a string primitiva:
+- 'first_use' OU
+- 'immediate'
+
+
+2. INSPECAO DA CAMADA DE API: src/lib/api.ts
+--------------------------------------------------------------------------------
+2.1 Metodo Responsavel pela Criacao:
+- Metodo: api.createKey(payload: CreateLicensePayload) (linhas 232 a 237).
+
+2.2 Endpoint Exato Utilizado:
+- URL: POST https://dashboard-proxy-api.gabrieldacechen6.workers.dev/admin/keys
+- Definicao em codigo:
+  async createKey(payload: CreateLicensePayload): Promise<{ key: string; license: LicenseKey } | LicenseKey> {
+    return apiRequest<any>('/admin/keys', {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+2.3 Estrutura Completa do JSON Enviado:
+Montado em CreateLicenseModal.tsx:103-111:
+const payload: CreateLicensePayload = {
+  clientName: clientName.trim(),
+  orderReference: orderReference.trim() || undefined,
+  notes: notes.trim() || undefined,
+  duration,
+  durationUnit,
+  deviceLimit,
+  activationMode,
+};
+Campos com valor undefined (como orderReference ou notes vazios) sao
+automaticamente omitidos pelo JSON.stringify() no corpo da requisicao HTTP.
+
+2.4 Tratamento da Resposta e Erros:
+- Desempacotamento de Envelope: Se o Worker responder no formato { success: true, data: {...} },
+  a funcao apiRequest extrai data automaticamente. Caso responda sem data, devolve o objeto raiz.
+- Tratamento de Erros HTTP: Se o codigo HTTP for >= 400, extrai error ou detail do JSON retornado
+  e lanca excecao tipada ApiError(status, message, endpoint).
+- Captura no Modal: O CreateLicenseModal captura o ApiError no bloco catch e exibe a mensagem de
+  alerta visual acima dos campos sem fechar o modal.
+
+
+3. INTEGRACAO COM O CLOUDFLARE WORKER
+--------------------------------------------------------------------------------
+3.1 O Frontend espera receber a key em texto puro?
+- SIM, OBRIGATORIAMENTE.
+- Em CreateLicenseModal.tsx:116-136, o frontend busca a propriedade key na resposta:
+  if ('key' in response && typeof (response as any).key === 'string') {
+    keyString = (response as any).key;
+  }
+- Se a chave for retornada, o modal entra no estado secundario "One-Time Key Display" (linhas 180 a 212),
+  exibindo a chave completa dentro de uma tag <code> com botao de copia rapida.
+- Se o Worker nao devolver a chave na propriedade key, o frontend assume que a chave nao foi exposta e fecha o modal.
+
+3.2 Quais campos o frontend espera receber apos a criacao?
+O frontend espera receber:
+1. key: string da chave gerada em texto puro (ex: "ZOD-ABCD-1234-EFGH").
+2. license (ou os atributos da licenca na raiz) contendo:
+   - id: string do documento no Firestore.
+   - clientName: string.
+   - status: 'pending' ou 'active'.
+   - duration: numero.
+   - durationUnit: string.
+   - deviceLimit: numero.
+   - activationMode: string.
+   - createdAt: timestamp ISO.
+   - expiresAt: timestamp ISO ou null.
+   - keyPrefix: string com os primeiros caracteres da chave.
+   - keySuffix: string com os ultimos caracteres da chave.
+
+3.3 Confronto de Contrato: Frontend vs Worker v3.1:
+- Discrepancia Potencial 1 (Duracao): O frontend envia duration (numero) e durationUnit ('days', 'hours').
+  Se o script do Worker v3.1 esperar a duracao convertida em segundos (ex: durationSeconds),
+  havera rejeicao ou interpretacao inadequada pelo backend.
+- Discrepancia Potencial 2 (Limite Ilimitado): O frontend envia -1 para limites ilimitados.
+  E necessario que o Worker reconheca -1 como ilimitado.
+- Discrepancia Potencial 3 (Chave em Texto Puro): Para que a tela de exibicao unica funcione,
+  o Worker precisa devolver a chave gerada no corpo da resposta do POST /admin/keys.
+
+
+4. AUDITORIA DE SEGURANCA
+--------------------------------------------------------------------------------
+4.1 A geracao da key utiliza criptografia segura?
+- O frontend NAO gera nenhuma chave localmente no navegador.
+- Nao ha gerador inseguro (Math.random) nem chave fake no cliente.
+- A geracao da chave e 100% delegada ao Cloudflare Worker remoto, que opera em ambiente
+  isolado V8 com acesso a API de alta entropia crypto.getRandomValues() do Web Crypto.
+
+4.2 Existe intencao de armazenar somente o hash SHA-256 no Firestore?
+- SIM, COMPROVADO NO CODIGO.
+- Em CreateLicenseModal.tsx:188-190, consta a declaracao explicita de arquitetura:
+  "Copy this license key now and deliver it securely to your client.
+   For security, the server only stores key hashes or masked identifiers."
+- Na tabela de licencas (LicensesPage.tsx:265-267) e nos detalhes da licenca (LicenseDetailPage.tsx:180-182),
+  o frontend nunca solicita nem exibe a chave completa; exibe apenas o prefixo e sufixo mascarados
+  (ZOD-AB••••CD), comprovando que a chave bruta e efemera e nao persiste no banco apos a criacao.
+
+4.3 A criacao e protegida por autenticacao e autorizacao OWNER/ADMIN no servidor?
+- No Frontend: O gatilho de abertura do modal e protegido por canMutate (AppLayout.tsx:105),
+  exigindo que o cargo normalizado seja OWNER ou ADMIN. Contas SUPPORT tem o botao desabilitado.
+- Na Transmissao: A requisicao HTTP anexa obrigatoriamente o cabecalho Authorization: Bearer <ID_TOKEN>
+  assinado criptograficamente pelo Firebase Auth.
+- No Servidor: Qualquer requisicao para /admin/* sem token ou com token invalido e terminantemente
+  rejeitada pelo Worker com HTTP 401 Unauthorized ("Token ausente." / "Sessao invalida").
+
+
+5. RESUMO TECNICO DOS CONTRATOS
+--------------------------------------------------------------------------------
+5.1 JSON Exato que seria enviado pelo Frontend:
+{
+  "clientName": "Acme Corp",
+  "orderReference": "ORD-2026-904",
+  "notes": "Cliente corporativo - contrato inicial",
+  "duration": 30,
+  "durationUnit": "days",
+  "deviceLimit": 1,
+  "activationMode": "first_use"
+}
+
+Se orderReference e notes nao forem preenchidos:
+{
+  "clientName": "Acme Corp",
+  "duration": 30,
+  "durationUnit": "days",
+  "deviceLimit": 1,
+  "activationMode": "first_use"
+}
+
+5.2 Exemplo de Resposta Esperada pelo Frontend:
+{
+  "success": true,
+  "key": "ZOD-98F1-4A2B-8C7E",
+  "license": {
+    "id": "lic_98f14a2b8c7e",
+    "clientName": "Acme Corp",
+    "orderReference": "ORD-2026-904",
+    "notes": "Cliente corporativo - contrato inicial",
+    "status": "pending",
+    "duration": 30,
+    "durationUnit": "days",
+    "deviceLimit": 1,
+    "devicesUsed": 0,
+    "activationMode": "first_use",
+    "createdAt": "2026-11-06T20:45:00.000Z",
+    "activatedAt": null,
+    "expiresAt": null,
+    "keyPrefix": "ZOD-98F1",
+    "keySuffix": "8C7E"
+  }
+}
+
+5.3 Campos Obrigatorios:
+- No Frontend: Apenas clientName e estritamente obrigatorio no formulario.
+- No Transporte: clientName, duration, durationUnit, deviceLimit, activationMode.
+
+5.4 Tabela de Funcionalidades:
+FUNCIONALIDADE                                       | STATUS
+-----------------------------------------------------------------------------------------
+Presets de Duracao (1d, 7d, 15d, 30d)                | IMPLEMENTADO
+Duracao Customizada com Unidades (dias, horas, etc.) | IMPLEMENTADO
+Limite de Dispositivos (1, 2, 3, Ilimitado, Custom)  | IMPLEMENTADO
+Modos de Ativacao (first_use vs immediate)           | IMPLEMENTADO
+Dialogo com Copia de Chave Unica em Texto Puro       | IMPLEMENTADO
+Mascaramento da Chave apos Fechamento (Prefixo••••)  | IMPLEMENTADO
+Geracao de Chave no Cliente                          | NAO IMPLEMENTADO (Por Seguranca)
+Criacao Real de Licenca no Servidor                  | NAO TESTADO (Auditoria de Leitura)
+
+5.5 Incompatibilidades Potenciais Identificadas:
+1. Duracao: Frontend envia duration e durationUnit. Se o Worker exigir durationSeconds,
+   havera divergencia de calculo.
+2. Ilimitado: Frontend envia -1. O Worker precisa aceitar -1 como flag de hardware sem limite.
+================================================================================
+[FIM DA AUDITORIA]

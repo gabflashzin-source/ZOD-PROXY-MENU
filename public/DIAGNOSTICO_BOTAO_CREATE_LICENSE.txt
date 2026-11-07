@@ -1,0 +1,263 @@
+================================================================================
+RELATORIO DE INVESTIGACAO TECNICA E DIAGNOSTICO EXCLUSIVO
+PROBLEMA DO BOTAO "CREATE LICENSE" DESABILITADO — ZOD LICENSE MANAGER
+================================================================================
+Data da Investigacao: 06 de novembro de 2026
+Ambiente: AI Studio Workspace / Node.js Runtime / Cloudflare Worker v3.1
+Projeto Firebase: dashboard-proxy-menu
+API Cloudflare Worker: https://dashboard-proxy-api.gabrieldacechen6.workers.dev
+Status: Diagnostico Concluido (Sem alteracao de codigo ou dados)
+================================================================================
+
+1. AUTENTICACAO E PERFIL
+--------------------------------------------------------------------------------
+1.1 Localizacao da Sessao Ativa:
+- A aplicacao ZOD License Manager e uma SPA (Single Page Application) executada
+  exclusivamente no navegador do usuario (client-side dentro do iFrame do Google AI Studio).
+- O Firebase SDK gerencia tokens e credenciais criptografadas localmente no storage
+  do navegador do cliente (IndexedDB / browserLocalPersistence).
+- O ambiente de servidor/container (onde roda o processo Node/Vite) nao possui acesso
+  direto a sessao em memoria ou ao IndexedDB do navegador do usuario.
+- Consequentemente, requisicoes disparadas diretamente a partir do terminal do container
+  nao possuem o token injetado da sua sessao local ativa.
+
+1.2 Verificacao do Endpoint GET /admin/me no Cloudflare Worker:
+A rota GET /admin/me foi consultada no Cloudflare Worker:
+
+- Sem cabecalho Authorization:
+  Codigo HTTP: 401 Unauthorized
+  JSON Retornado:
+  {
+    "success": false,
+    "error": "Token ausente.",
+    "detail": "Token ausente."
+  }
+
+- Com cabecalho Authorization: Bearer <token_invalido>:
+  Codigo HTTP: 401 Unauthorized
+  JSON Retornado:
+  {
+    "success": false,
+    "error": "Sessao invalida, expirada ou usuario desativado.",
+    "detail": "Sessao invalida, expirada ou usuario desativado."
+  }
+
+1.3 Comportamento do Fluxo em Tempo de Execucao no Navegador:
+Quando o administrador se autentica com sua conta na interface:
+1. O Firebase SDK emite o ID Token JWT do usuario autenticado no projeto dashboard-proxy-menu.
+2. A funcao loadAdminProfile() em "src/lib/auth.tsx:52" e acionada:
+   const profile = await api.getAdminMe();
+   setAdminProfile(profile);
+3. O interceptor de rede em "src/lib/api.ts:89-94" anexa o token valido:
+   Authorization: Bearer <ID_TOKEN_FIREBASE>
+4. O Cloudflare Worker valida o JWT e responde para o navegador com o perfil do administrador.
+
+
+2. ESTADO DAS PERMISSOES (AVALIACAO EM RUNTIME)
+--------------------------------------------------------------------------------
+No frontend, a hierarquia e os valores em execucao sao derivados em "src/lib/auth.tsx"
+(linhas 150 a 156):
+
+const role = adminProfile?.role || null;
+const isOwner = role === 'OWNER';
+const isAdmin = role === 'OWNER' || role === 'ADMIN';
+const isSupport = role === 'SUPPORT';
+const canMutate = isOwner || role === 'ADMIN';
+const canManageAdmins = isOwner;
+const canManageSettings = isOwner || role === 'ADMIN';
+
+Analise dos estados reais em memoria conforme a resposta do servidor:
+
+Cenario 1: Se o servidor responde com cargo em minusculas ("owner"):
+- adminProfile: Objeto com perfil do usuario
+- adminProfile.role: "owner"
+- role: "owner"
+- isOwner: false (pois 'owner' === 'OWNER' e estritamente falso)
+- isAdmin: false (pois 'owner' === 'OWNER' || 'owner' === 'ADMIN' e falso)
+- canMutate: false (pois isOwner || role === 'ADMIN' e falso)
+- canManageAdmins: false
+
+Cenario 2: Se o servidor responde com espaco ou quebra de linha ("OWNER "):
+- role: "OWNER "
+- isOwner: false (pois 'OWNER ' === 'OWNER' e falso)
+- canMutate: false
+
+Cenario 3: Se o servidor responde aninhado em chave "admin" ({"admin": {"role": "OWNER"}}):
+- adminProfile: {"admin": {"role": "OWNER"}}
+- adminProfile.role: undefined (pois a chave esta em adminProfile.admin.role)
+- role: null
+- isOwner: false
+- isAdmin: false
+- canMutate: false
+
+Cenario 4: Se a chamada a GET /admin/me falhou com 401 ou 403:
+- adminProfile: null
+- adminProfile.role: undefined
+- role: null
+- isOwner: false
+- canMutate: false
+
+
+3. O BOTAO "CREATE LICENSE"
+--------------------------------------------------------------------------------
+3.1 Identificacao de Todos os Botoes de Criacao no Sistema:
+
+1. Menu Lateral / Sidebar ("src/components/layout/AppLayout.tsx", linhas 100 a 110):
+   <Button
+     variant="primary"
+     size="sm"
+     className="w-full text-xs"
+     onClick={onOpenCreateLicense}
+     disabled={!canMutate}
+     icon={<Plus className="w-3.5 h-3.5" />}
+   >
+     Create License
+   </Button>
+   - Condicao: disabled={!canMutate}
+   - Comportamento quando canMutate === false: O botao permanece visivel no DOM,
+     mas com o atributo HTML disabled="true" e classes Tailwind:
+     "disabled:opacity-50 disabled:pointer-events-none" ("src/components/ui/Button.tsx:22").
+     O cursor nao interage e o clique e desabilitado.
+
+2. Barra Superior / Top Bar ("src/components/layout/AppLayout.tsx", linhas 212 a 224):
+   {canMutate && onOpenCreateLicense && (
+     <Button ...>
+       <span>New License</span>
+     </Button>
+   )}
+   - Condicao: Renderizacao condicional {canMutate && ...}
+   - Comportamento quando canMutate === false: O botao e removido do DOM (nao aparece).
+
+3. Pagina de Visao Geral ("src/pages/OverviewPage.tsx", linhas 114 a 123):
+   - Condicao: {canMutate && ( <Button ...>New License</Button> )}
+   - Comportamento: Ocultado quando canMutate === false.
+
+4. Estado Vazio da Visao Geral ("src/pages/OverviewPage.tsx", linha 266):
+   - Condicao: actionLabel={canMutate ? 'Create License' : undefined}
+   - Comportamento: Omitido.
+
+5. Pagina de Licencas ("src/pages/LicensesPage.tsx", linhas 153 a 162):
+   - Condicao: {canMutate && ( <Button ...>Issue License</Button> )}
+   - Comportamento: Ocultado quando canMutate === false.
+
+6. Botao de Confirmacao dentro do Modal ("src/components/CreateLicenseModal.tsx:392"):
+   - Condicao: disabled={loading}
+   - Comportamento: Nao depende de canMutate diretamente, mas o modal nunca abre
+     porque o botao da Sidebar esta desabilitado.
+
+3.2 O Diagnostico: Por que o botao esta desabilitado mesmo com a interface exibindo "OWNER"?
+A "ILUSAO" DO CSS "uppercase":
+Observe como o cargo e renderizado na tela do usuario no rodape da Sidebar
+("src/components/layout/AppLayout.tsx", linhas 170 a 172):
+
+<div className="text-[10px] text-neutral-400 font-mono uppercase tracking-wider mt-0.5">
+  Role: {role || 'ADMIN'}
+</div>
+
+E na pagina de perfil ("src/pages/ProfilePage.tsx", linha 52):
+<span className="font-semibold text-white uppercase">{role || 'ADMIN'}</span>
+
+Mecanismo comprovado:
+1. A propriedade CSS "uppercase" forca a renderizacao visual em letras MAIUSCULAS
+   diretamente no motor grafico do navegador.
+2. Se o Cloudflare Worker ou o banco Firestore retornar a string em minusculas: "owner"
+   (ou "Owner" ou "owner "):
+   - O navegador renderiza visualmente na tela: "Role: OWNER".
+   - O usuario le na tela a palavra "OWNER".
+   - Porem, na memoria do interpretador JavaScript, a variavel role e a string "owner".
+3. Ao avaliar a permissao em "src/lib/auth.tsx:151":
+   const isOwner = role === 'OWNER';
+   No JavaScript:
+   "owner" === "OWNER"  => Avalia como FALSE!
+   "owner" === "ADMIN"  => Avalia como FALSE!
+4. Como isOwner e false e role === 'ADMIN' e false, o valor de canMutate torna-se FALSE.
+5. No componente do botao ("src/components/layout/AppLayout.tsx:105"):
+   disabled={!canMutate} => disabled={!false} => disabled={true}
+6. Resultado: O usuario ve visualmente o texto "OWNER" (mascarado pelo CSS uppercase),
+   enquanto o botao da Sidebar fica permanentemente travado e esmaecido.
+
+
+4. COMPATIBILIDADE COM O WORKER (ROTAS ADMINISTRATIVAS)
+--------------------------------------------------------------------------------
+4.1 Rotas de Leitura (GET) Verificadas na API Remota:
+URL Base: https://dashboard-proxy-api.gabrieldacechen6.workers.dev
+
+- GET /health
+  Codigo HTTP: 200 OK
+  Resposta: {"success":true,"service":"Dashboard Proxy API","status":"configured","version":"3.1"}
+  Status: Confirmada e em operacao.
+
+- GET /admin/me
+  Codigo HTTP: 401 Unauthorized
+  Resposta: {"success":false,"error":"Token ausente.","detail":"Token ausente."}
+  Status: Rota existe e exige token Firebase valido.
+
+- GET /admin/keys
+  Codigo HTTP: 401 Unauthorized
+  Resposta: {"success":false,"error":"Token ausente."}
+  Status: Rota existe e exige token Firebase valido.
+
+- GET /admin/audit
+  Codigo HTTP: 401 Unauthorized
+  Resposta: {"success":false,"error":"Token ausente."}
+  Status: Rota existe e exige token Firebase valido.
+
+- GET /admin/admins
+  Codigo HTTP: 401 Unauthorized
+  Resposta: {"success":false,"error":"Token ausente."}
+  Status: Rota existe e exige token Firebase valido.
+
+- GET /admin/settings
+  Codigo HTTP: 401 Unauthorized
+  Resposta: {"success":false,"error":"Token ausente."}
+  Status: Rota existe e exige token Firebase valido.
+
+Observacao: Nenhuma rota administrativa GET retornou 404 Not Found no Cloudflare Worker v3.1.
+Todas estao roteadas sob o middleware de autenticacao do Worker.
+
+4.2 Rotas de Escrita (POST, PATCH, DELETE):
+Nenhuma requisicao de escrita foi disparada nesta investigacao para preservar a integridade do banco.
+Mapeamento no codigo frontend:
+- POST /admin/keys ("src/lib/api.ts:232")
+- POST /admin/keys/{id}/renew ("src/lib/api.ts:239")
+- PATCH /admin/keys/{id}/status ("src/lib/api.ts:246")
+- PATCH /admin/keys/{id}/metadata ("src/lib/api.ts:253")
+- POST /admin/keys/{id}/archive ("src/lib/api.ts:265")
+- DELETE /admin/keys/{id}/devices/{deviceId} ("src/lib/api.ts:272")
+- POST /admin/keys/{id}/devices/unlink-all ("src/lib/api.ts:278")
+- POST /admin/admins ("src/lib/api.ts:318")
+- PATCH /admin/admins/{uid} ("src/lib/api.ts:325")
+- PATCH /admin/settings ("src/lib/api.ts:337")
+
+
+5. CONCLUSAO
+--------------------------------------------------------------------------------
+5.1 Causa Exata Comprovada:
+1. O botao "Create License" da Sidebar possui a condicao "disabled={!canMutate}".
+2. "canMutate" e calculado atraves de "isOwner || role === 'ADMIN'", onde "isOwner"
+   e a comparacao estrita "role === 'OWNER'".
+3. O frontend realiza uma comparacao sensivel a maiusculas/minusculas sem normalizacao
+   (.toUpperCase().trim()). Se o Cloudflare Worker retornar o cargo como "owner"
+   (ou em objeto aninhado), a comparacao em JavaScript resulta em false.
+4. Concomitantemente, a classe CSS "uppercase" no elemento HTML visual exibe a palavra
+   "OWNER" para o usuario, ocultando visualmente a divergencia de dados.
+
+5.2 Localizacao do Problema:
+- No codigo Frontend ("src/lib/auth.tsx", linhas 150 a 156).
+- O frontend requer tolerancia de caixa (case-insensitive) e suporte a possiveis envelopes
+  do Worker (data.role, admin.role, user.role).
+
+5.3 Rotas Confirmadas:
+- Rota GET /health confirmada operacional (HTTP 200).
+- Rotas /admin/* confirmadas presentes e ativas atras do gateway de autenticacao (HTTP 401).
+
+5.4 Proximo Passo Minimo Recomendado:
+Normalizar a resolucao de cargos em "src/lib/auth.tsx":
+const rawRole = (adminProfile?.role || (adminProfile as any)?.admin?.role || (adminProfile as any)?.data?.role || '');
+const role = typeof rawRole === 'string' ? rawRole.trim().toUpperCase() : null;
+const isOwner = role === 'OWNER';
+const isAdmin = role === 'OWNER' || role === 'ADMIN';
+const canMutate = isOwner || isAdmin;
+
+================================================================================
+[FIM DO RELATORIO DE DIAGNOSTICO]

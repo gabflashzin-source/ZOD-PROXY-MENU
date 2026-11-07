@@ -1,0 +1,6 @@
+{
+  "name": "ZOD License Manager",
+  "description": "AZOD License Manager: Plataforma administrativa premium para gestão de licenças de software, hardware HWID e auditoria com Cloudflare Worker v4.0.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

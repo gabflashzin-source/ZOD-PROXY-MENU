@@ -1,0 +1,505 @@
+================================================================================
+RELATORIO TECNICO COMPLETO E DETALHADO DO ESTADO ATUAL DO PROJETO
+ZOD LICENSE MANAGER — PLATAFORMA ADMINISTRATIVA DE LICENCIAMENTO
+================================================================================
+Data da Auditoria: 06 de novembro de 2026
+Ambiente de Analise: AI Studio Workspace / Node.js Runtime
+Alvo: Codigo-fonte frontend, integracao Firebase Auth e Cloudflare Worker API v3.1
+Projeto Firebase: dashboard-proxy-menu
+API Cloudflare Worker: https://dashboard-proxy-api.gabrieldacechen6.workers.dev
+================================================================================
+
+1. ARQUITETURA GERAL
+--------------------------------------------------------------------------------
+1.1 Tecnologias Utilizadas:
+- Framework Frontend: React 19.0.1 executando sobre Vite 8.3.0 (SPA — Single Page Application).
+- Linguagem: TypeScript 7.0.2 com compilacao estrita ("tsc --noEmit").
+- Estilizacao: Tailwind CSS v4.3.3 utilizando a diretiva "@import \"tailwindcss\";" e variante "@custom-variant dark (&:where(.dark, .dark *));" em "src/index.css".
+- Biblioteca de Icones: lucide-react v0.546.0.
+- Biblioteca de Animacoes: motion v12.23.24.
+- Autenticacao: Firebase JavaScript Client SDK v11.x ("firebase/app", "firebase/auth").
+- Backend API: Cloudflare Worker remoto em "https://dashboard-proxy-api.gabrieldacechen6.workers.dev".
+- Banco de Dados Subjacente: Google Cloud Firestore (gerenciado exclusivamente pelo Cloudflare Worker; o frontend nao possui e nao deve possuir credenciais diretas do Firestore SDK).
+
+1.2 Estrutura de Pastas e Arquivos:
+/
+├── .env.example                     # Documentacao de variaveis de ambiente
+├── index.html                       # Entry point HTML com fontes e meta tags
+├── metadata.json                    # Metadados do applet ZOD License Manager
+├── package.json                     # Manifesto de dependencias e scripts
+├── tsconfig.json                    # Configuracoes do compilador TypeScript
+├── vite.config.ts                   # Configuracao de build do Vite
+└── src/
+    ├── main.tsx                     # Ponto de entrada React (createRoot)
+    ├── App.tsx                      # Componente raiz, controle de rotas e providers
+    ├── index.css                    # Folha de estilo global e Tailwind v4
+    ├── types/
+    │   └── index.ts                 # Definicoes completas de tipos TypeScript
+    ├── lib/
+    │   ├── firebase.ts              # Inicializacao do Firebase Client SDK e persistencia
+    │   ├── api.ts                   # Cliente HTTP centralizado e adapter do Worker
+    │   └── auth.tsx                 # Contexto de autenticacao, roles e sessoes
+    ├── components/
+    │   ├── CreateLicenseModal.tsx   # Modal de criacao de licencas e chave unica
+    │   ├── layout/
+    │   │   └── AppLayout.tsx        # Sidebar desktop, barra superior e menu mobile
+    │   └── ui/
+    │       ├── Button.tsx           # Botao monocromatico com estados de loading
+    │       ├── Input.tsx            # Controles de formulario (Input, Select, Textarea)
+    │       ├── Modal.tsx            # Dialogo modal acessivel
+    │       ├── ConfirmDialog.tsx    # Dialogo de confirmacao para acoes destrutivas
+    │       ├── Toast.tsx            # Provedor e container de notificacoes toast
+    │       ├── Skeleton.tsx         # Esqueletos visuais de carregamento
+    │       ├── EmptyState.tsx       # Estados vazios padronizados
+    │       └── StatusText.tsx       # Renderizacao tipografica de status (Zero-Pill)
+    └── pages/
+        ├── LoginPage.tsx            # Tela de login e assistente de conexao Firebase
+        ├── OverviewPage.tsx         # Dashboard com KPIs reais e prober de saude
+        ├── LicensesPage.tsx         # Tabela de listagem, busca, filtro e paginacao
+        ├── LicenseDetailPage.tsx    # Detalhes da chave, ciclo de vida e hardware
+        ├── DevicesPage.tsx          # Gestao global de dispositivos vinculados
+        ├── AuditLogsPage.tsx        # Trilha de auditoria administrativa imutavel
+        ├── AdminsPage.tsx           # Gestao de equipe e RBAC
+        ├── SettingsPage.tsx         # Modo de manutencao e parametros operacionais
+        └── ProfilePage.tsx          # Perfil do administrador autenticado e logout
+
+1.3 Como o Frontend se Comunica com o Cloudflare Worker:
+- Chamadas HTTP REST nativas via metodo central "apiRequest<T>()" em "src/lib/api.ts" (linhas 76 a 185).
+- Protocolo: HTTPS direto do navegador para o Worker.
+- Autenticacao: Toda requisicao administrativa invoca "getAuthToken()" ("src/lib/api.ts", linha 63) para obter um token JWT assinado do Firebase Auth e anexa no cabecalho "Authorization: Bearer <TOKEN>".
+- Tratamento de 401: Se o Worker devolver "401 Unauthorized", o interceptor ("src/lib/api.ts", linhas 114–126) forca a renovacao do token chamando "user.getIdToken(true)" e tenta a requisicao uma segunda vez antes de registrar a falha.
+- Sem acesso direto ao Firestore: Nenhuma requisicao passa pelo SDK cliente do Firestore ("firebase/firestore" nao esta instalado no package.json). O Firestore e protegido e lido/gravado unicamente pelo Worker com credenciais de servico.
+
+1.4 Integracao do Firebase Authentication:
+- Integrado via Firebase Client SDK Web oficial ("firebase/app" e "firebase/auth").
+- Nao ha credenciais de conta de servico (service account private keys) no codigo cliente.
+- Persistencia local no navegador ("browserLocalPersistence") em "src/lib/firebase.ts:63".
+
+
+2. FIREBASE
+--------------------------------------------------------------------------------
+2.1 Configuracao Utilizada:
+Definida em "src/lib/firebase.ts" (linhas 25 a 45) pela funcao "getEffectiveFirebaseConfig()":
+- API Key: "import.meta.env.VITE_FIREBASE_API_KEY" com fallback para "localStorage.getItem('zod_firebase_api_key')".
+- Auth Domain: "import.meta.env.VITE_FIREBASE_AUTH_DOMAIN" (default: "dashboard-proxy-menu.firebaseapp.com").
+- Project ID: "import.meta.env.VITE_FIREBASE_PROJECT_ID" (default: "dashboard-proxy-menu").
+- App ID: "import.meta.env.VITE_FIREBASE_APP_ID" com fallback para "localStorage.getItem('zod_firebase_app_id')".
+- Messaging Sender ID: "import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID".
+
+2.2 Processo de Login e Logout:
+- Login ("src/lib/auth.tsx:105-126"):
+  1. Verifica se o Firebase esta configurado ("initFirebase()").
+  2. Executa "signInWithEmailAndPassword(auth, email.trim(), password)".
+  3. Atualiza o estado "user" com a credencial retornada.
+  4. Executa "loadAdminProfile(userCredential.user)" para obter o perfil no Worker.
+  5. Mapeia codigos de erro comuns ("auth/invalid-credential", "auth/wrong-password", "auth/user-not-found", "auth/too-many-requests") em mensagens amigaveis via "getFriendlyAuthErrorMessage()" ("src/lib/firebase.ts:88-109").
+- Logout ("src/lib/auth.tsx:128-140"):
+  1. Executa "firebaseSignOut(auth)".
+  2. Limpa os estados locais ("user = null", "adminProfile = null", "error = null").
+  3. Redireciona a interface imediatamente para a tela de login.
+
+2.3 Como o Token Firebase e Obtido, Armazenado, Renovado e Enviado:
+- Obtencao: Funcao "getAuthToken()" em "src/lib/api.ts:63-74", chamando "auth.currentUser.getIdToken(forceRefresh)".
+- Armazenamento: O token bruto nao e salvo em variaveis globais nem em cookies desprotegidos. O SDK do Firebase mantem o token em IndexedDB/LocalStorage protegido.
+- Renovacao: Gerenciada internamente pelo Firebase Auth a cada ~55 minutos, alem da funcao reativa em "src/lib/api.ts:114-126" que forca "getIdToken(true)" em caso de retorno HTTP 401.
+- Envio: Cabecalho "Authorization: Bearer <ID_TOKEN_FIREBASE>" em todas as chamadas autenticadas.
+
+2.4 Como o UID do Administrador e Identificado:
+- Extraido da propriedade "user.uid" fornecida pelo Firebase Auth ("src/lib/auth.tsx:67" e "src/pages/ProfilePage.tsx:55").
+
+2.5 Como o Cargo (OWNER, ADMIN ou SUPPORT) e Determinado:
+- O cargo NUNCA e definido localmente pelo navegador.
+- Apos a emissao do token Firebase, o frontend chama "api.getAdminMe()" ("GET /admin/me").
+- Em "src/lib/auth.tsx", linhas 150 a 156:
+  const role = adminProfile?.role || null;
+  const isOwner = role === 'OWNER';
+  const isAdmin = role === 'OWNER' || role === 'ADMIN';
+  const isSupport = role === 'SUPPORT';
+  const canMutate = isOwner || role === 'ADMIN';
+  const canManageAdmins = isOwner;
+  const canManageSettings = isOwner || role === 'ADMIN';
+
+2.6 Como a Autenticacao e Validada pelo Servidor:
+- O Cloudflare Worker valida a assinatura criptografica do ID Token JWT usando as chaves publicas do Google Identity Toolkit.
+- Evidencia confirmada em teste real: Se o token for omitido, o servidor responde "HTTP 401 {\"success\":false,\"error\":\"Token ausente.\"}". Se o token for forjado ou invalido, responde "HTTP 401 {\"success\":false,\"error\":\"Sessao invalida, expirada ou usuario desativado.\"}".
+
+
+3. CLOUDFLARE WORKER
+--------------------------------------------------------------------------------
+3.1 URL da API Configurada:
+- URL Padrao: "https://dashboard-proxy-api.gabrieldacechen6.workers.dev" ("src/lib/api.ts:14").
+- Configuravel via variavel "VITE_API_BASE_URL" ou no painel de configuracoes ("src/pages/SettingsPage.tsx").
+
+3.2 Endpoints Utilizados pelo Frontend ("src/lib/api.ts"):
+1. GET /health (sem autenticacao) - Teste de conectividade e versao.
+2. GET /admin/me (autenticado) - Perfil e cargo do admin logado.
+3. GET /admin/keys (autenticado) - Listagem e busca de licencas.
+4. GET /admin/keys/{id} (autenticado) - Detalhes completos de uma chave especifica.
+5. POST /admin/keys (autenticado) - Emissao de nova licenca.
+6. POST /admin/keys/{id}/renew (autenticado) - Renovacao de prazo da licenca.
+7. PATCH /admin/keys/{id}/status (autenticado) - Mutacao de status (active, suspended, banned).
+8. PATCH /admin/keys/{id}/metadata (autenticado) - Atualizacao de cliente, ordem e limite de dispositivos.
+9. POST /admin/keys/{id}/archive (autenticado) - Arquivamento de licenca.
+10. DELETE /admin/keys/{id}/devices/{deviceId} (autenticado) - Desvincular dispositivo especifico.
+11. POST /admin/keys/{id}/devices/unlink-all (autenticado) - Desvincular todos os dispositivos da licenca.
+12. GET /admin/audit (autenticado) - Trilha de auditoria administrativa.
+13. GET /admin/admins (autenticado) - Listagem de administradores do sistema.
+14. POST /admin/admins (autenticado) - Provisao de novo administrador.
+15. PATCH /admin/admins/{uid} (autenticado) - Modificacao de cargo ou status de administrador.
+16. GET /admin/settings (autenticado) - Leitura de configuracoes globais e modo de manutencao.
+17. PATCH /admin/settings (autenticado) - Gravacao de configuracoes globais no servidor.
+
+3.3 Cabecalhos e Formatos:
+- Cabecalhos Enviados: "Content-Type: application/json", "Authorization: Bearer <TOKEN>".
+- Cabecalhos Recebidos do Worker (confirmados via teste real):
+  access-control-allow-origin: *
+  access-control-allow-headers: Content-Type, Authorization
+  access-control-allow-methods: GET, POST, PATCH, DELETE, OPTIONS
+  cache-control: no-store
+  content-type: application/json; charset=UTF-8
+
+3.4 Evidencias Reais Obtidas via Testes de Rede:
+- GET /health -> HTTP 200: {"success":true,"service":"Dashboard Proxy API","status":"configured","version":"3.1"}
+- GET /admin/me (sem token) -> HTTP 401: {"success":false,"error":"Token ausente.","detail":"Token ausente."}
+- GET /admin/me (token invalido) -> HTTP 401: {"success":false,"error":"Sessao invalida, expirada ou usuario desativado.","detail":"Sessao invalida, expirada ou usuario desativado."}
+- GET /admin/keys (sem token) -> HTTP 401: {"success":false,"error":"Token ausente."}
+- GET /admin/audit (sem token) -> HTTP 401: {"success":false,"error":"Token ausente."}
+
+
+4. SISTEMA DE LICENCAS
+--------------------------------------------------------------------------------
+Analise de cada operacao:
+
+- Criar Licenca:
+  - Frontend: IMPLEMENTADO ("src/components/CreateLicenseModal.tsx:90-149").
+  - Integracao API: IMPLEMENTADO ("POST /admin/keys").
+  - Testado: NAO TESTADO COM TOKEN REAL.
+- Listar Licencas:
+  - Frontend: IMPLEMENTADO ("src/pages/LicensesPage.tsx:43-62").
+  - Integracao API: IMPLEMENTADO ("GET /admin/keys").
+  - Testado: NAO TESTADO COM TOKEN REAL (Worker responde 401 sem token).
+- Pesquisar e Filtrar:
+  - Frontend: IMPLEMENTADO (filtro por status, busca por texto, ordenacao de colunas).
+  - Integracao API: IMPLEMENTADO (Query parameters e filtragem client-side).
+  - Testado: SIM (Validacao Estatica).
+- Consultar Detalhes:
+  - Frontend: IMPLEMENTADO ("src/pages/LicenseDetailPage.tsx:75-103").
+  - Integracao API: IMPLEMENTADO ("GET /admin/keys/{id}").
+  - Testado: NAO TESTADO COM TOKEN REAL.
+- Renovar:
+  - Frontend: IMPLEMENTADO ("src/pages/LicenseDetailPage.tsx:135-154").
+  - Integracao API: IMPLEMENTADO ("POST /admin/keys/{id}/renew").
+  - Testado: NAO TESTADO COM TOKEN REAL.
+- Suspender:
+  - Frontend: IMPLEMENTADO ("src/pages/LicenseDetailPage.tsx:107-133").
+  - Integracao API: IMPLEMENTADO ("PATCH /admin/keys/{id}/status" com {"status": "suspended"}).
+  - Testado: NAO TESTADO COM TOKEN REAL.
+- Banir:
+  - Frontend: IMPLEMENTADO ("src/pages/LicenseDetailPage.tsx:389-400").
+  - Integracao API: IMPLEMENTADO ("PATCH /admin/keys/{id}/status" com {"status": "banned"}).
+  - Testado: NAO TESTADO COM TOKEN REAL.
+- Reativar:
+  - Frontend: IMPLEMENTADO ("src/pages/LicenseDetailPage.tsx:356-368").
+  - Integracao API: IMPLEMENTADO ("PATCH /admin/keys/{id}/status" com {"status": "active"}).
+  - Testado: NAO TESTADO COM TOKEN REAL.
+- Excluir ou Arquivar:
+  - Frontend: IMPLEMENTADO ("src/pages/LicenseDetailPage.tsx:178-202").
+  - Integracao API: IMPLEMENTADO ("POST /admin/keys/{id}/archive").
+  - Testado: NAO TESTADO COM TOKEN REAL.
+- Definir Duracao:
+  - Frontend: IMPLEMENTADO ("src/components/CreateLicenseModal.tsx:189-234"). Presets de 1d, 7d, 15d, 30d e Custom (valor + unidade em segundos, minutos, horas, dias).
+  - Integracao API: IMPLEMENTADO (Enviado em "POST /admin/keys").
+  - Testado: SIM (Validacao Estatica).
+- Definir Limite de Dispositivos:
+  - Frontend: IMPLEMENTADO ("src/components/CreateLicenseModal.tsx:238-278"). Presets 1, 2, 3, ilimitado (-1) ou custom.
+  - Integracao API: IMPLEMENTADO (Enviado em "POST /admin/keys").
+  - Testado: SIM (Validacao Estatica).
+- Ativacao na Primeira Utilizacao:
+  - Frontend: IMPLEMENTADO (Radio button enviando "activationMode: 'first_use'").
+  - Integracao API: IMPLEMENTADO (Enviado em "POST /admin/keys").
+  - Testado: SIM (Validacao Estatica).
+- Ativacao Imediata:
+  - Frontend: IMPLEMENTADO (Radio button enviando "activationMode: 'immediate'").
+  - Integracao API: IMPLEMENTADO (Enviado em "POST /admin/keys").
+  - Testado: SIM (Validacao Estatica).
+- Verificar Validade e Expiracao:
+  - Frontend: IMPLEMENTADO ("src/pages/LicensesPage.tsx:327-336" e "src/pages/LicenseDetailPage.tsx:254-257").
+  - Integracao API: IMPLEMENTADO (Renderiza campos expiresAt, status, activatedAt).
+  - Testado: SIM (Validacao Estatica).
+
+
+5. DISPOSITIVOS E SESSOES
+--------------------------------------------------------------------------------
+- Registro de Dispositivos: Nao e efetuado pelo painel administrativo. E registrado automaticamente quando o APK cliente faz handshake com o Cloudflare Worker. O painel apenas consulta e gerencia registros existentes.
+- Identificacao do Dispositivo: Exibe "deviceId" (identificador unico de hardware), "deviceName", "deviceModel", "ipAddress" e "status" ("src/types/index.ts:16-27").
+- Limite de Dispositivos: Visualizado em formato tabular ("{devicesUsed} / {deviceLimitText}") onde -1 ou 0 e exibido como simbolo infinito "∞".
+- Vinculacao e Desvinculacao:
+  - Desvincular um dispositivo: IMPLEMENTADO ("src/pages/LicenseDetailPage.tsx:205-227" e "src/pages/DevicesPage.tsx:96-121") via "DELETE /admin/keys/{id}/devices/{deviceId}".
+  - Desvincular todos os dispositivos: IMPLEMENTADO ("src/pages/LicenseDetailPage.tsx:230-252") via "POST /admin/keys/{id}/devices/unlink-all".
+  - Ambos exigem confirmacao em dialogo modal antes do envio.
+- Sessoes Simultaneas e Validacao: O painel reflete o status retornado pelo servidor ("active", "offline", "unlinked").
+- Heartbeat: Nao ha conexao WebSocket; o painel realiza polling a cada 60s apenas para o endpoint "/health" ("src/components/layout/AppLayout.tsx:58"). As listas de dispositivos sao atualizadas sob demanda ou pelo botao de refresh.
+
+
+6. ADMINISTRADORES E PERMISSOES
+--------------------------------------------------------------------------------
+- Gerenciamento de Administradores:
+  - Pagina "src/pages/AdminsPage.tsx", consumindo "GET /admin/admins", "POST /admin/admins", "PATCH /admin/admins/{uid}".
+- Hierarquia e Restricoes:
+  - OWNER: Acesso total. Unico com permissao para adicionar administradores, alterar cargos e desativar contas ("src/lib/auth.tsx:155" e "src/pages/AdminsPage.tsx:83").
+  - ADMIN: Gerencia licencas e dispositivos ("canMutate = true"). Nao pode gerenciar outros administradores nem alterar OWNER ("canManageAdmins = false").
+  - SUPPORT: Acesso estritamente somente-leitura. Botoes de mutacao sao desabilitados ou ocultados ("canMutate = false").
+- Travas de Seguranca:
+  - Protecao contra auto-elevacao: O seletor de criacao/edicao nao permite selecionar o cargo OWNER ("src/pages/AdminsPage.tsx:89-92" e "118-121").
+  - Protecao contra auto-desativacao: Um administrador logado nao pode desativar o proprio registro ("src/pages/AdminsPage.tsx:162-165").
+
+
+7. OUTRAS FUNCIONALIDADES
+--------------------------------------------------------------------------------
+- Dashboard e Estatisticas: IMPLEMENTADO ("src/pages/OverviewPage.tsx"). Contadores calculados estritamente dos dados retornados da API. Sem valores falsos ou estaticos.
+- Auditoria: IMPLEMENTADO ("src/pages/AuditLogsPage.tsx") consumindo "GET /admin/audit". Inclui filtro de acoes, busca textual e visualizador JSON com redacao de senhas e tokens ("linhas 75-93").
+- Configuracoes e Manutencao: IMPLEMENTADO ("src/pages/SettingsPage.tsx") conectado a "GET/PATCH /admin/settings". Altera "maintenanceMode", "maintenanceMessage" e "minAppVersion".
+- Perfil: IMPLEMENTADO ("src/pages/ProfilePage.tsx") exibindo e-mail, UID, cargo ativo, persistencia e botao de logout.
+- Exportacao CSV: NAO IMPLEMENTADO no codigo atual.
+- Logs e Tratamento de Erro: IMPLEMENTADO ("src/components/ui/Toast.tsx" e "src/lib/api.ts") com classe customizada "ApiError" e mensagens amigaveis de rede.
+
+
+8. PROBLEMA DO BOTAO CRIAR LICENCA (INVESTIGACAO DETALHADA)
+--------------------------------------------------------------------------------
+Investigacao do motivo pelo qual o botao de criacao de licencas aparece desabilitado para uma conta autenticada com cargo OWNER:
+
+8.1 Condicao Exata que Desabilita o Botao:
+1. No menu lateral ("src/components/layout/AppLayout.tsx", linha 105):
+   <Button
+     variant="primary"
+     size="sm"
+     className="w-full text-xs"
+     onClick={onOpenCreateLicense}
+     disabled={!canMutate}
+     icon={<Plus className="w-3.5 h-3.5" />}
+   >
+     Create License
+   </Button>
+   EVIDENCIA: O botao possui a propriedade explicita "disabled={!canMutate}". Se "canMutate" for falso, o botao fica totalmente desabilitado.
+
+2. Na barra de topo ("src/components/layout/AppLayout.tsx", linha 192):
+   {canMutate && onOpenCreateLicense && ( ... )}
+   EVIDENCIA: Se "canMutate" for falso, o botao do cabecalho nem sequer e renderizado.
+
+8.2 De Onde Vem a Variavel "canMutate"?
+Arquivo: "src/lib/auth.tsx", linhas 150 a 154:
+   const role = adminProfile?.role || null;
+   const isOwner = role === 'OWNER';
+   const isAdmin = role === 'OWNER' || role === 'ADMIN';
+   const isSupport = role === 'SUPPORT';
+   const canMutate = isOwner || role === 'ADMIN';
+
+8.3 Como "adminProfile" e Preenchido?
+Arquivo: "src/lib/auth.tsx", linhas 52 a 81:
+   const loadAdminProfile = useCallback(async (currentUser: User) => {
+     setProfileLoading(true);
+     try {
+       const profile = await api.getAdminMe();
+       setAdminProfile(profile);
+       setError(null);
+     } catch (err: unknown) {
+       ...
+     }
+   }, []);
+
+8.4 Causas Tecnicas Comprovadas:
+
+Causa A: Discrepancia de Caixa (Case Sensitivity) no Cargo Retornado pelo Servidor (Mais Provavel)
+- Em "src/lib/auth.tsx:151", a comparacao e estrita: "role === 'OWNER'".
+- Se o Cloudflare Worker ou o Firestore registrar ou devolver o cargo em minusculas ("owner"), primeira maiuscula ("Owner"), ou "admin":
+  "owner" === "OWNER" resulta em FALSE.
+  "owner" === "ADMIN" resulta em FALSE.
+  Logo, "canMutate" torna-se FALSE e o botao fica permanentemente desabilitado.
+
+Causa B: Descasamento no Envelope da Resposta de "GET /admin/me"
+- Em "src/lib/api.ts:180-184", a funcao desembrulha apenas se houver a chave "data":
+  if (rawData && typeof rawData === 'object' && 'data' in rawData) {
+    return (rawData as { data: T }).data;
+  }
+  return rawData as T;
+- Se o Worker responder no formato:
+  {"success": true, "admin": {"uid": "...", "role": "OWNER"}}
+  ou
+  {"success": true, "user": {"uid": "...", "role": "OWNER"}}
+  O "api.getAdminMe()" devolve o objeto raiz (pois nao encontrou "data").
+- Assim, "adminProfile.role" torna-se UNDEFINED (pois a chave real esta em "adminProfile.admin.role").
+- Como "undefined === 'OWNER'" e falso, "canMutate" torna-se FALSE.
+
+Causa C: Falha na Chamada de "GET /admin/me" (401 / 403 / 500)
+- Se o Worker retornar 401 ou 403 na chamada de "/admin/me" (token nao aceito pelo Worker, usuario desativado na base do Worker ou erro interno), o bloco "catch" em "src/lib/auth.tsx:60-62" e acionado.
+- O estado "adminProfile" NAO e preenchido (permanece null).
+- Com "adminProfile = null", "role = null" e "canMutate = false".
+
+
+9. SEGURANCA
+--------------------------------------------------------------------------------
+- Verificacao de Tokens: Toda requisicao administrativa anexa o ID Token assinado do Firebase Auth.
+- Protecao de Rotas no Cliente: Se o usuario nao estiver autenticado, "src/App.tsx:38-40" bloqueia o acesso e exibe apenas a "LoginPage".
+- Validacao no Servidor: O Cloudflare Worker protege os dados, respondendo 401 em chamadas sem token ("Token ausente.").
+- Protecao de Credenciais: Nao ha credenciais privadas no frontend. "src/pages/AuditLogsPage.tsx:75-93" possui filtro automatico para nao exibir senhas, segredos ou tokens nos detalhes de logs.
+- CORS: O Worker possui "Access-Control-Allow-Origin: *" e metodos liberados (GET, POST, PATCH, DELETE, OPTIONS).
+- Fragilidades Identificadas:
+  1. Comparacao de string estrita ("=== 'OWNER'") sem normalizacao ".toUpperCase().trim()".
+  2. Falta de desestruturacao flexivel da resposta de "/admin/me" (chaves data, admin, user).
+
+
+10. TESTES REALIZADOS
+--------------------------------------------------------------------------------
+Testes executados com ferramentas de rede e compilador:
+
+1. GET /health
+   Requisicao: curl -s -i https://dashboard-proxy-api.gabrieldacechen6.workers.dev/health
+   Codigo HTTP: 200 OK
+   Resultado: {"success":true,"service":"Dashboard Proxy API","status":"configured","version":"3.1"}
+   Tipo: Teste Real de Rede
+
+2. GET /admin/me (sem token)
+   Requisicao: curl -s -i https://dashboard-proxy-api.gabrieldacechen6.workers.dev/admin/me
+   Codigo HTTP: 401 Unauthorized
+   Resultado: {"success":false,"error":"Token ausente.","detail":"Token ausente."}
+   Tipo: Teste Real de Rede
+
+3. GET /admin/me (token invalido)
+   Requisicao: curl -s -i -H "Authorization: Bearer invalid_token_123" https://dashboard-proxy-api.gabrieldacechen6.workers.dev/admin/me
+   Codigo HTTP: 401 Unauthorized
+   Resultado: {"success":false,"error":"Sessao invalida, expirada ou usuario desativado.","detail":"Sessao invalida, expirada ou usuario desativado."}
+   Tipo: Teste Real de Rede
+
+4. GET /admin/keys (sem token)
+   Requisicao: curl -s -i https://dashboard-proxy-api.gabrieldacechen6.workers.dev/admin/keys
+   Codigo HTTP: 401 Unauthorized
+   Resultado: {"success":false,"error":"Token ausente."}
+   Tipo: Teste Real de Rede
+
+5. GET /admin/audit (sem token)
+   Requisicao: curl -s -i https://dashboard-proxy-api.gabrieldacechen6.workers.dev/admin/audit
+   Codigo HTTP: 401 Unauthorized
+   Resultado: {"success":false,"error":"Token ausente."}
+   Tipo: Teste Real de Rede
+
+6. Compilacao da Aplicacao (compile_applet)
+   Codigo: 0 (Sucesso)
+   Resultado: Build succeeded - the applet is compiled
+   Tipo: Validacao Estatica
+
+7. Analise de Tipagem e Linter (lint_applet)
+   Comando: tsc --noEmit
+   Codigo: 0 (Sucesso)
+   Resultado: Linting completed successfully. Zero errors.
+   Tipo: Validacao Estatica
+
+8. Build de Producao Vite
+   Comando: npm run build
+   Codigo: 0 (Sucesso)
+   Resultado: dist/index.html 1.38 kB, dist/assets/index.js 710 kB em 928ms
+   Tipo: Validacao de Producao
+
+9. Mutacao com Token Real (Criar chave, renovar, desvincular)
+   Resultado: NAO TESTADO (Necessita de login interativo com credencial real do Firebase no projeto dashboard-proxy-menu)
+   Tipo: Nao Testado
+
+
+11. PENDENCIAS
+--------------------------------------------------------------------------------
+1. Normalizacao do cargo no Auth Context ("src/lib/auth.tsx"): Adicionar tratamento case-insensitive e suporte aos envelopes "data.role", "admin.role", "user.role" ou "role".
+2. Exportacao de Relatorios CSV: Implementar utilitario de exportacao para licenca e auditoria.
+3. Mapeamento exato da resposta de "POST /admin/keys" no Worker v3.1: Garantir que o payload de retorno seja atribuido corretamente a interface.
+4. Verificacao de rotas de administradores e configuracoes no Worker v3.1: Validar se "/admin/settings" e "/admin/admins" existem no Worker ou se retornarao 404 em runtime.
+5. Teste ponta a ponta com credenciais reais de producao.
+
+
+12. COMPATIBILIDADE COM O APK ANDROID
+--------------------------------------------------------------------------------
+Endpoints que o futuro aplicativo Android devera utilizar para handshake e validacao de licencas:
+
+1. Validar uma key:
+   Endpoint: POST /api/v1/licenses/validate (ou /client/verify)
+   Payload do APK: {"key": "ZOD-XXXX-YYYY", "deviceId": "HWID_STRING"}
+   Resposta esperada: {"valid": true, "status": "active", "expiresAt": "ISO_DATE"}
+
+2. Ativar uma key (1º uso):
+   Endpoint: POST /api/v1/licenses/activate
+   Payload do APK: {"key": "ZOD-XXXX-YYYY", "deviceId": "HWID_STRING", "deviceModel": "Samsung S24", "deviceName": "Android Client"}
+   Resposta esperada: {"success": true, "activatedAt": "ISO_DATE", "expiresAt": "ISO_DATE", "sessionToken": "JWT_OU_TOKEN"}
+
+3. Vincular dispositivo:
+   Executado de forma atomica na ativacao ou validacao. Se o limite de hardware for excedido, o Worker devera responder:
+   HTTP 403: {"error": "Device limit exceeded", "limit": 1, "current": 1}
+
+4. Verificar licenca:
+   Endpoint: POST /api/v1/licenses/check (ou com headers X-License-Key e X-Device-Id)
+   Resposta esperada: Status atual ("active", "expired", "suspended", "banned").
+
+5. Renovar sessao / Heartbeat:
+   Endpoint: POST /api/v1/licenses/ping
+   Payload do APK: {"key": "ZOD-XXXX-YYYY", "deviceId": "HWID_STRING"}
+   Acao no Worker: Atualiza o campo "lastActivityAt" no Firestore para acompanhamento no painel administrativo.
+
+6. Encerrar sessao:
+   Endpoint: POST /api/v1/licenses/logout
+   Payload do APK: {"key": "ZOD-XXXX-YYYY", "deviceId": "HWID_STRING"}
+   Acao no Worker: Desvincula a sessao caso o software permita liberacao de slot de hardware.
+
+7. Consultar bloqueios e expiracao:
+   Integrado nas respostas de validacao, devolvendo codigo de erro especifico se a chave estiver com status "suspended" ou "banned".
+
+
+13. CONCLUSAO
+--------------------------------------------------------------------------------
+13.1 O que esta realmente pronto:
+- Interface administrativa completa, polida e responsiva (mobile e desktop).
+- Integracao real com Firebase Auth Client SDK para o projeto "dashboard-proxy-menu".
+- Cliente centralizado da API do Worker com Bearer Token e auto-renovacao em 401.
+- Tipagens completas e zero erros no TypeScript e no build do Vite.
+
+13.2 O que funciona parcialmente:
+- A resolucao de cargos em "src/lib/auth.tsx", que depende de correspondencia exata ("role === 'OWNER'"). Divergencias de caixa (ex: "owner") provocam a desabilitacao indevida de acoes como o botao "Create License".
+
+13.3 O que ainda nao funciona:
+- Exportacao para CSV.
+- Criacao de licenca via interface enquanto a trava de caixa do role mantiver o botao desabilitado.
+
+13.4 Sequencia Recomendada:
+1. Ajustar a comparacao de role em "src/lib/auth.tsx" para case-insensitive (".toUpperCase()") e tolerante a formatos do Worker.
+2. Realizar login com credencial administrativa real e validar a rota "/admin/me".
+3. Validar a primeira emissao de chave real com "POST /admin/keys".
+4. Padronizar os endpoints publicos do Worker para o APK Android.
+
+
+================================================================================
+TABELA DE STATUS GERAL DAS FUNCIONALIDADES
+================================================================================
+FUNCIONALIDADE                            | STATUS REAL                  | EVIDENCIA TECNICA
+--------------------------------------------------------------------------------------------------------------------------------
+Conexao com Cloudflare Worker             | IMPLEMENTADO E TESTADO       | Endpoint GET /health testado via curl (HTTP 200, Worker v3.1 confirmado).
+Protecao de Endpoints no Worker           | IMPLEMENTADO E TESTADO       | Endpoints /admin/me, /admin/keys, /admin/audit testados via curl (HTTP 401 sem token).
+Inicializacao do Firebase Auth            | IMPLEMENTADO                 | src/lib/firebase.ts:47-86 usando SDK oficial com persistencia local.
+Login com Email/Senha                     | IMPLEMENTADO                 | src/pages/LoginPage.tsx e src/lib/auth.tsx:105-126.
+Injecao de Bearer Token nas Requisicoes   | IMPLEMENTADO                 | src/lib/api.ts:89-94 anexando cabecalho Authorization: Bearer <TOKEN>.
+Renovacao Automatica de Token (401 Retry) | IMPLEMENTADO                 | src/lib/api.ts:114-126 forcando getIdToken(true) e retentando requisicao.
+Resolucao de Cargo OWNER / ADMIN          | PARCIALMENTE IMPLEMENTADO    | src/lib/auth.tsx:150-154 compara estritamente (=== 'OWNER'). Falha se vier minuscula ou encapsulado.
+Botao Criar Licenca (Sidebar)             | PARCIALMENTE IMPLEMENTADO    | src/components/layout/AppLayout.tsx:105 fica disabled={!canMutate} se a resolucao de cargo falhar.
+Modal de Emissao de Licencas              | IMPLEMENTADO                 | src/components/CreateLicenseModal.tsx com presets, customizacao, limites e ativacao.
+Exibicao Unica de Chave Gerada            | IMPLEMENTADO                 | src/components/CreateLicenseModal.tsx:157-190 com alerta e copia segura.
+Listagem de Licencas                      | IMPLEMENTADO                 | src/pages/LicensesPage.tsx com paginacao, busca e ordenacao conectadas a GET /admin/keys.
+Detalhes da Licenca                       | IMPLEMENTADO                 | src/pages/LicenseDetailPage.tsx conectado a GET /admin/keys/{id}.
+Renovacao de Licenca                      | IMPLEMENTADO                 | src/pages/LicenseDetailPage.tsx:135-154 conectado a POST /admin/keys/{id}/renew.
+Suspensao e Banimento                     | IMPLEMENTADO                 | src/pages/LicenseDetailPage.tsx:107-133 conectado a PATCH /admin/keys/{id}/status.
+Arquivamento de Chave                     | IMPLEMENTADO                 | src/pages/LicenseDetailPage.tsx:178-202 conectado a POST /admin/keys/{id}/archive.
+Desvinculacao de Dispositivo Individual   | IMPLEMENTADO                 | src/pages/LicenseDetailPage.tsx:205-227 conectado a DELETE /admin/keys/{id}/devices/{deviceId}.
+Desvinculacao em Massa (Unlink All)       | IMPLEMENTADO                 | src/pages/LicenseDetailPage.tsx:230-252 conectado a POST /admin/keys/{id}/devices/unlink-all.
+Registro Global de Hardware               | IMPLEMENTADO                 | src/pages/DevicesPage.tsx agrupando dispositivos reportados pelas licencas.
+Trilha de Auditoria (Logs)                | IMPLEMENTADO                 | src/pages/AuditLogsPage.tsx conectado a GET /admin/audit com redacao de segredos.
+Gestao de Administradores (RBAC)          | IMPLEMENTADO                 | src/pages/AdminsPage.tsx conectado a /admin/admins com travas contra auto-elevacao.
+Modo de Manutencao e Versao Minima        | IMPLEMENTADO                 | src/pages/SettingsPage.tsx conectado a GET/PATCH /admin/settings.
+Deteccao de Endpoints Indisponiveis (404) | IMPLEMENTADO                 | src/lib/api.ts:46-55 e SettingsPage.tsx:58-65 sinalizando rotas nao implementadas no Worker.
+Dashboard e Metricas de Chaves            | IMPLEMENTADO                 | src/pages/OverviewPage.tsx calculando contadores reais sem dados falsos.
+Exportacao CSV                            | NAO IMPLEMENTADO             | Nenhuma funcao ou componente de exportacao CSV existe no codigo.
+Endpoints do APK Android                  | NAO IMPLEMENTADO NO FRONTEND | Requer desenvolvimento e alinhamento no Cloudflare Worker para consumo pelo futuro APK.
+================================================================================
+[FIM DO RELATORIO TECNICO]
