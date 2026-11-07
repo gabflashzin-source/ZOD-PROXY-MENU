@@ -2,22 +2,15 @@ import React, { useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { saveLocalFirebaseConfig, getEffectiveFirebaseConfig } from '../lib/firebase';
-import { ShieldCheck, Lock, Mail, Key, AlertCircle, Settings, Sun, Moon } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, AlertCircle, Sun, Moon } from 'lucide-react';
 import { useTheme } from '../lib/theme';
 
 export const LoginPage: React.FC = () => {
-  const { login, error, clearError, isFirebaseConfigured, recheckFirebaseConfig } = useAuth();
+  const { login, error, clearError } = useAuth();
   const { theme, setTheme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showConfig, setShowConfig] = useState(!isFirebaseConfigured);
-
-  // Configuration fields for Firebase public credentials if missing in env
-  const effectiveConfig = getEffectiveFirebaseConfig();
-  const [apiKeyInput, setApiKeyInput] = useState(effectiveConfig.apiKey || '');
-  const [appIdInput, setAppIdInput] = useState(effectiveConfig.appId || '');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,18 +20,10 @@ export const LoginPage: React.FC = () => {
     try {
       await login(email, password);
     } catch {
-      // Error is set in auth context
+      // Error is caught and surfaced via auth context
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleSaveConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!apiKeyInput.trim()) return;
-    saveLocalFirebaseConfig(apiKeyInput.trim(), appIdInput.trim());
-    recheckFirebaseConfig();
-    setShowConfig(false);
   };
 
   return (
@@ -47,8 +32,9 @@ export const LoginPage: React.FC = () => {
       <div className="absolute top-4 right-4">
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className="p-2 rounded-lg border border-[#E8E8E8] dark:border-[#252525] bg-white dark:bg-[#111111] text-[#666666] dark:text-[#A1A1A1] hover:text-[#111111] dark:hover:text-white transition-colors"
+          className="p-2 rounded-lg border border-[#E8E8E8] dark:border-[#252525] bg-white dark:bg-[#111111] text-[#666666] dark:text-[#A1A1A1] hover:text-[#111111] dark:hover:text-white transition-colors cursor-pointer"
           title="Alternar Tema"
+          aria-label="Toggle theme"
         >
           {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
@@ -66,7 +52,7 @@ export const LoginPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Login Box */}
+        {/* Direct Login Card */}
         <div className="bg-white dark:bg-[#111111] border border-[#E8E8E8] dark:border-[#252525] rounded-2xl p-6 shadow-xl backdrop-blur-xs">
           {error && (
             <div className="mb-4 p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/60 rounded-xl flex items-start gap-2.5 text-xs text-red-600 dark:text-red-400">
@@ -82,54 +68,6 @@ export const LoginPage: React.FC = () => {
               </div>
             </div>
           )}
-
-          {!isFirebaseConfigured && (
-            <div className="mb-5 p-3.5 bg-neutral-50 dark:bg-[#161616] border border-[#E8E8E8] dark:border-[#252525] rounded-xl text-xs space-y-2">
-              <div className="flex items-center gap-2 font-semibold text-[#111111] dark:text-white">
-                <Settings className="w-4 h-4 text-[#888888] dark:text-[#707070]" />
-                Configuração Firebase Necessária
-              </div>
-              <p className="text-[#666666] dark:text-[#A1A1A1] leading-relaxed text-[11px]">
-                Para autenticar administradores no projeto <span className="font-mono text-[#111111] dark:text-white">dashboard-proxy-menu</span>, informe a chave de API pública do Firebase.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full text-xs mt-1"
-                onClick={() => setShowConfig(!showConfig)}
-              >
-                {showConfig ? 'Ocultar Formulário' : 'Configurar Chave do Firebase'}
-              </Button>
-            </div>
-          )}
-
-          {showConfig ? (
-            <form onSubmit={handleSaveConfig} className="space-y-4 mb-4 pb-4 border-b border-[#E8E8E8] dark:border-[#252525]">
-              <div className="text-xs font-semibold text-[#111111] dark:text-white pb-1">
-                Configuração Web do Firebase
-              </div>
-              <Input
-                label="Chave de API Web (VITE_FIREBASE_API_KEY)"
-                placeholder="AIzaSy..."
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                required
-                leftIcon={<Key className="w-4 h-4" />}
-                helperText="Localizada no Console Firebase > Configurações do Projeto"
-              />
-              <Input
-                label="ID do Aplicativo (Opcional)"
-                placeholder="1:123456789:web:abcdef"
-                value={appIdInput}
-                onChange={(e) => setAppIdInput(e.target.value)}
-              />
-              <div className="flex items-center gap-2 pt-1">
-                <Button variant="primary" size="sm" type="submit" className="w-full">
-                  Salvar Configuração
-                </Button>
-              </div>
-            </form>
-          ) : null}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
@@ -160,7 +98,6 @@ export const LoginPage: React.FC = () => {
               size="lg"
               className="w-full mt-2"
               loading={loading}
-              disabled={!isFirebaseConfigured && !apiKeyInput}
               icon={<ShieldCheck className="w-4 h-4" />}
             >
               Entrar no Dashboard
@@ -176,14 +113,6 @@ export const LoginPage: React.FC = () => {
 
         {/* Footer info & credits */}
         <div className="mt-6 text-center space-y-2">
-          <div>
-            <button
-              onClick={() => setShowConfig(!showConfig)}
-              className="text-[#666666] hover:text-[#111111] dark:text-[#A1A1A1] dark:hover:text-white transition-colors text-[11px] font-mono underline"
-            >
-              {showConfig ? 'Fechar Configuração' : 'Configurações de Conexão Firebase'}
-            </button>
-          </div>
           <div className="text-[11px] font-mono text-[#888888] dark:text-[#707070]">
             Todos os créditos de criação para <strong className="text-[#111111] dark:text-white">Pajé DEV</strong>
           </div>

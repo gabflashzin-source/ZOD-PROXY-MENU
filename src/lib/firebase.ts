@@ -22,24 +22,30 @@ export interface FirebaseClientConfig {
   messagingSenderId: string;
 }
 
+export const DEFAULT_FIREBASE_API_KEY = 'AIzaSyB7QfgeKJ9fKYNHyQ3Kl8G-x2U-G-s7gz0';
+export const DEFAULT_FIREBASE_PROJECT_ID = 'dashboard-proxy-menu';
+export const DEFAULT_FIREBASE_AUTH_DOMAIN = 'dashboard-proxy-menu.firebaseapp.com';
+export const DEFAULT_FIREBASE_APP_ID = '1:188098379949:web:b502ca1f658e85d4c0c624';
+export const DEFAULT_FIREBASE_SENDER_ID = '188098379949';
+
 export function getEffectiveFirebaseConfig(): FirebaseClientConfig {
   const envApiKey = (import.meta.env.VITE_FIREBASE_API_KEY as string | undefined)?.trim();
   const storedApiKey = (typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_API_KEY) : null)?.trim();
-  const apiKey = envApiKey || storedApiKey || '';
+  const apiKey = envApiKey || storedApiKey || DEFAULT_FIREBASE_API_KEY;
 
   const envProjectId = (import.meta.env.VITE_FIREBASE_PROJECT_ID as string | undefined)?.trim();
-  const projectId = envProjectId || 'dashboard-proxy-menu';
+  const projectId = envProjectId || DEFAULT_FIREBASE_PROJECT_ID;
 
   const envAuthDomain = (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string | undefined)?.trim();
   const storedAuthDomain = (typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_AUTH_DOMAIN) : null)?.trim();
-  const authDomain = envAuthDomain || storedAuthDomain || `${projectId}.firebaseapp.com`;
+  const authDomain = envAuthDomain || storedAuthDomain || DEFAULT_FIREBASE_AUTH_DOMAIN;
 
   const envAppId = (import.meta.env.VITE_FIREBASE_APP_ID as string | undefined)?.trim();
   const storedAppId = (typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_APP_ID) : null)?.trim();
-  const appId = envAppId || storedAppId || '';
+  const appId = envAppId || storedAppId || DEFAULT_FIREBASE_APP_ID;
 
   const envSenderId = (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string | undefined)?.trim();
-  const messagingSenderId = envSenderId || '';
+  const messagingSenderId = envSenderId || DEFAULT_FIREBASE_SENDER_ID;
 
   return {
     apiKey,
