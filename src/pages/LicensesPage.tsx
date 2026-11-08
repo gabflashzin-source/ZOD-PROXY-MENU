@@ -21,6 +21,12 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
+import {
+  formatSimpleDate,
+  getRealLicenseStatus,
+  getDeletedKeyIds,
+  normalizeLicense,
+} from '../lib/licenseUtils';
 
 interface LicensesPageProps {
   onSelectLicense: (id: string) => void;
@@ -67,7 +73,11 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
         search: searchQuery || undefined,
         limit: 200,
       });
-      setKeys(res.keys || []);
+      const deletedSet = getDeletedKeyIds();
+      const normalizedKeys = (res.keys || [])
+        .map(normalizeLicense)
+        .filter((k) => !deletedSet.has(k.id));
+      setKeys(normalizedKeys);
     } catch (err: unknown) {
       console.error('Failed to fetch licenses:', err);
       if (err instanceof ApiError) {
@@ -86,8 +96,16 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
 
   // Filtered and sorted keys
   const filteredKeys = useMemo(() => {
+    const deletedSet = getDeletedKeyIds();
     return keys
       .filter((k) => {
+        // Excluída (some do painel)
+        if (deletedSet.has(k.id)) return false;
+        const realStatus = getRealLicenseStatus(k);
+        if (statusFilter !== 'all' && realStatus !== statusFilter) {
+          return false;
+        }
+
         if (!searchQuery.trim()) return true;
         const q = searchQuery.toLowerCase();
         const client = (k.clientName || '').toLowerCase();
@@ -115,7 +133,7 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
         if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
         return 0;
       });
-  }, [keys, searchQuery, sortBy, sortOrder]);
+  }, [keys, searchQuery, sortBy, sortOrder, statusFilter]);
 
   const totalPages = Math.ceil(filteredKeys.length / pageSize) || 1;
   const paginatedKeys = useMemo(() => {
@@ -249,6 +267,7 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
           {/* Mobile Card List (< 640px) */}
           <div className="block sm:hidden space-y-3">
             {paginatedKeys.map((license) => {
+              const realStatus = getRealLicenseStatus(license);
               const keyDisplay = license.keyPrefix
                 ? `${license.keyPrefix}••••${license.keySuffix || ''}`
                 : license.key || license.id;
@@ -275,7 +294,7 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
                         </div>
                       )}
                     </div>
-                    <StatusText status={license.status} />
+                    <StatusText status={realStatus} />
                   </div>
 
                   <div className="p-2 rounded-lg bg-neutral-50 dark:bg-[#161616]/60 border border-[#E8E8E8] dark:border-[#252525] flex items-center justify-between gap-2">
@@ -309,7 +328,7 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
                     </div>
                     <div>
                       {license.expiresAt
-                        ? `Expira: ${new Date(license.expiresAt).toLocaleDateString()}`
+                        ? `Expira: ${formatSimpleDate(license.expiresAt)}`
                         : license.activationMode === 'first_use' && !license.activatedAt
                         ? 'No 1º uso'
                         : 'Vitalícia'}
@@ -318,7 +337,7 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
 
                   <div className="pt-2 border-t border-[#E8E8E8] dark:border-[#1C1C1C] flex items-center justify-between">
                     <span className="text-[10px] text-[#888888] dark:text-[#707070] font-mono">
-                      {license.createdAt ? new Date(license.createdAt).toLocaleDateString() : '—'}
+                      {formatSimpleDate(license.createdAt)}
                     </span>
                     <span className="text-xs font-medium text-[#111111] dark:text-white flex items-center gap-1">
                       Ver Detalhes <ExternalLink className="w-3 h-3" />
@@ -417,7 +436,7 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
                           </div>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap">
-                          <StatusText status={license.status} />
+                          <StatusText status={getRealLicenseStatus(license)} />
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap font-mono tabular-nums text-[#111111] dark:text-neutral-300">
                           <span className="flex items-center gap-1.5">
@@ -428,13 +447,11 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
                           </span>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap font-mono tabular-nums text-[#666666] dark:text-[#A1A1A1] text-[11px]">
-                          {license.createdAt
-                            ? new Date(license.createdAt).toLocaleDateString()
-                            : '—'}
+                          {formatSimpleDate(license.createdAt)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap font-mono tabular-nums text-[#666666] dark:text-[#A1A1A1] text-[11px]">
                           {license.expiresAt
-                            ? new Date(license.expiresAt).toLocaleDateString()
+                            ? formatSimpleDate(license.expiresAt)
                             : license.activationMode === 'first_use' && !license.activatedAt
                             ? 'No 1º uso'
                             : 'Vitalícia'}

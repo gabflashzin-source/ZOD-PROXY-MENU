@@ -14,41 +14,55 @@ export const StatusText: React.FC<StatusTextProps> = ({ status }) => {
     switch (normalized) {
       case 'active':
       case 'online':
+      case 'funcional':
         return {
-          label: 'Ativo',
+          label: 'Ativa / Funcional',
           dotClass: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]',
           textClass: 'text-emerald-700 dark:text-emerald-400 font-medium',
         };
       case 'pending':
+      case 'pendente':
         return {
-          label: 'Pendente',
+          label: 'Pendente (1º uso)',
           dotClass: 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.3)]',
           textClass: 'text-amber-700 dark:text-amber-400 font-medium',
         };
       case 'expired':
+      case 'expirada':
         return {
-          label: 'Expirado',
+          label: 'Expirada',
           dotClass: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]',
           textClass: 'text-red-700 dark:text-red-400 font-normal',
         };
       case 'suspended':
+      case 'suspensa':
         return {
-          label: 'Suspenso',
+          label: 'Suspensa',
           dotClass: 'bg-amber-500',
           textClass: 'text-amber-700 dark:text-amber-400 font-medium',
         };
       case 'banned':
+      case 'banida':
       case 'revoked':
         return {
-          label: 'Banido',
+          label: 'Banida',
           dotClass: 'bg-red-600',
           textClass: 'text-red-700 dark:text-red-400 font-semibold',
         };
       case 'archived':
+      case 'arquivada':
         return {
-          label: 'Arquivado',
+          label: 'Arquivada',
           dotClass: 'bg-neutral-400 dark:bg-neutral-600',
           textClass: 'text-neutral-600 dark:text-neutral-400 font-normal',
+        };
+      case 'deleted':
+      case 'excluida':
+      case 'excluída':
+        return {
+          label: 'Excluída',
+          dotClass: 'bg-red-950 dark:bg-red-600',
+          textClass: 'text-neutral-500 dark:text-neutral-400 line-through font-normal',
         };
       case 'offline':
         return {

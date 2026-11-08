@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import type { LicenseKey, AuditLogItem, HealthCheckResponse } from '../types';
@@ -20,7 +20,15 @@ import {
   Zap,
   Copy,
   Check,
+  Clock,
 } from 'lucide-react';
+import {
+  formatSimpleDate,
+  formatFullDateTime,
+  getRealLicenseStatus,
+  getDeletedKeyIds,
+  normalizeLicense,
+} from '../lib/licenseUtils';
 
 interface OverviewPageProps {
   onNavigate: (tab: 'licenses' | 'devices' | 'audit', detailId?: string) => void;
@@ -36,6 +44,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate, onOpenCr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const handleCopyKey = (license: LicenseKey, e: React.MouseEvent) => {
@@ -48,8 +57,8 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate, onOpenCr
     toast.success('Chave copiada para a área de transferência', valueToCopy);
   };
 
-  const fetchOverviewData = async () => {
-    setLoading(true);
+  const fetchOverviewData = async (manual = false) => {
+    if (manual) setLoading(true);
     setError(null);
     try {
       const [healthRes, keysRes, auditRes] = await Promise.allSettled([
@@ -65,7 +74,11 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate, onOpenCr
       }
 
       if (keysRes.status === 'fulfilled') {
-        setKeys(keysRes.value.keys || []);
+        const deletedSet = getDeletedKeyIds();
+        const normalized = (keysRes.value.keys || [])
+          .map(normalizeLicense)
+          .filter((k) => !deletedSet.has(k.id));
+        setKeys(normalized);
       } else {
         const err = keysRes.reason;
         console.error('Failed to fetch keys:', err);
@@ -81,26 +94,66 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate, onOpenCr
       }
 
       setLastRefreshed(new Date());
+      if (manual) {
+        toast.success('Dados atualizados manualmente');
+      }
     } catch (err: any) {
       setError(err?.message || 'Erro de comunicação com a API do Cloudflare Worker.');
     } finally {
-      setLoading(false);
+      if (manual) setLoading(false);
+      else setLoading(false);
     }
   };
 
+  // Initial load
   useEffect(() => {
-    fetchOverviewData();
+    fetchOverviewData(false);
   }, []);
 
-  // Compute metrics strictly from real API data
-  const totalLicenses = keys.length;
-  const activeCount = keys.filter((k) => k.status === 'active').length;
-  const pendingCount = keys.filter((k) => k.status === 'pending').length;
-  const expiredCount = keys.filter((k) => k.status === 'expired').length;
-  const suspendedCount = keys.filter((k) => k.status === 'suspended').length;
-  const bannedCount = keys.filter((k) => k.status === 'banned').length;
+  // 1-second live clock ticker
+  useEffect(() => {
+    const clockInterval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(clockInterval);
+  }, []);
 
-  const totalConnectedDevices = keys.reduce((acc, k) => {
+  // Automatic background refresh every 3 seconds
+  useEffect(() => {
+    const autoRefreshInterval = setInterval(() => {
+      fetchOverviewData(false);
+    }, 3000);
+    return () => clearInterval(autoRefreshInterval);
+  }, []);
+
+  // Compute live metrics dynamically against currentTime & real statuses
+  const deletedSet = useMemo(() => getDeletedKeyIds(), [keys, currentTime]);
+  const activeKeys = useMemo(() => {
+    return keys.filter((k) => !deletedSet.has(k.id));
+  }, [keys, deletedSet]);
+
+  const totalLicenses = activeKeys.length;
+  const activeCount = useMemo(() => {
+    return activeKeys.filter((k) => getRealLicenseStatus(k) === 'active').length;
+  }, [activeKeys, currentTime]);
+
+  const pendingCount = useMemo(() => {
+    return activeKeys.filter((k) => getRealLicenseStatus(k) === 'pending').length;
+  }, [activeKeys, currentTime]);
+
+  const expiredCount = useMemo(() => {
+    return activeKeys.filter((k) => getRealLicenseStatus(k) === 'expired').length;
+  }, [activeKeys, currentTime]);
+
+  const suspendedCount = useMemo(() => {
+    return activeKeys.filter((k) => getRealLicenseStatus(k) === 'suspended').length;
+  }, [activeKeys, currentTime]);
+
+  const bannedCount = useMemo(() => {
+    return activeKeys.filter((k) => getRealLicenseStatus(k) === 'banned').length;
+  }, [activeKeys, currentTime]);
+
+  const totalConnectedDevices = activeKeys.reduce((acc, k) => {
     if (k.devices && Array.isArray(k.devices)) {
       return acc + k.devices.filter((d) => d.status !== 'unlinked').length;
     }
@@ -120,19 +173,19 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate, onOpenCr
           <h1 className="text-xl font-bold tracking-tight text-[#111111] dark:text-white">
             Painel Geral
           </h1>
-          <p className="text-xs text-[#666666] dark:text-[#A1A1A1] mt-1">
-            Métricas em tempo real fornecidas pela API Cloudflare Worker v4.0 e Firestore.
+          <p className="text-xs text-[#666666] dark:text-[#A1A1A1] mt-1 flex items-center gap-2">
+            <span>Métricas sincronizadas em tempo real com Cloudflare Worker v4.0 e Firestore.</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchOverviewData}
+            onClick={() => fetchOverviewData(true)}
             loading={loading}
             icon={<RefreshCw className="w-3.5 h-3.5" />}
           >
-            Atualizar
+            Atualizar Manualmente
           </Button>
           {canMutate && (
             <Button
@@ -155,7 +208,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate, onOpenCr
             <h4 className="text-xs font-semibold text-red-700 dark:text-red-300">Alerta de Comunicação da API</h4>
             <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{error}</p>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchOverviewData}>
+          <Button variant="outline" size="sm" onClick={() => fetchOverviewData(true)}>
             Tentar Novamente
           </Button>
         </div>
@@ -170,10 +223,15 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate, onOpenCr
             {health?.service || 'Cloudflare Worker'} · {health?.status === 'online' ? 'Online & Operacional' : 'Ativo'}
           </span>
         </div>
-        <div className="flex items-center gap-3 text-[11px] font-mono text-[#888888] dark:text-[#707070]">
+        <div className="flex items-center gap-3 text-[11px] font-mono text-[#888888] dark:text-[#707070] flex-wrap">
+          <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Ao vivo · {currentTime.toLocaleTimeString()}</span>
+          </span>
+          <span>·</span>
           <span>Worker v{health?.version || '4.0.0'}</span>
           <span>·</span>
-          <span>Sincronizado às {lastRefreshed.toLocaleTimeString()}</span>
+          <span>Último sync: {lastRefreshed.toLocaleTimeString()}</span>
         </div>
       </div>
 
@@ -350,7 +408,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate, onOpenCr
                           <Copy className="w-3 h-3" />
                         )}
                       </button>
-                      <StatusText status={license.status} />
+                      <StatusText status={getRealLicenseStatus(license)} />
                     </div>
                     <div className="text-[11px] text-[#666666] dark:text-[#A1A1A1] truncate mt-0.5">
                       Cliente: {license.clientName || 'Cliente Geral'}
@@ -358,7 +416,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate, onOpenCr
                     </div>
                   </div>
                   <div className="text-right shrink-0 text-[11px] font-mono text-[#888888] dark:text-[#707070]">
-                    {license.createdAt ? new Date(license.createdAt).toLocaleDateString() : '—'}
+                    {formatSimpleDate(license.createdAt)}
                   </div>
                 </div>
               ))}

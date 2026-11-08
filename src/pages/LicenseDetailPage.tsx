@@ -24,7 +24,18 @@ import {
   Lock,
   Copy,
   Check,
+  Trash2,
+  Hourglass,
+  Calendar,
+  ShieldAlert,
 } from 'lucide-react';
+import {
+  formatFullDateTime,
+  getRealLicenseStatus,
+  getRemainingTime,
+  markKeyAsDeletedLocally,
+  normalizeLicense,
+} from '../lib/licenseUtils';
 
 interface LicenseDetailPageProps {
   licenseId: string;
@@ -39,6 +50,15 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+
+  // Second-by-second ticker for live countdown timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleCopyKey = () => {
     const valueToCopy = license?.key || license?.id;
@@ -82,12 +102,13 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
     setError(null);
     try {
       const data = await api.getKey(licenseId);
-      setLicense(data);
+      const normalized = normalizeLicense(data);
+      setLicense(normalized);
       // Pre-populate edit fields
-      setEditClientName(data.clientName || '');
-      setEditOrderRef(data.orderReference || '');
-      setEditNotes(data.notes || '');
-      setEditDeviceLimit(data.deviceLimit ?? 1);
+      setEditClientName(normalized.clientName || '');
+      setEditOrderRef(normalized.orderReference || '');
+      setEditNotes(normalized.notes || '');
+      setEditDeviceLimit(normalized.deviceLimit ?? 1);
     } catch (err: unknown) {
       console.error('Failed to load license detail:', err);
       if (err instanceof ApiError) {
@@ -200,6 +221,35 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
         } finally {
           setActionLoading(false);
           setConfirmState((prev) => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
+  };
+
+  // Handle Permanent Deletion
+  const handleDeleteKey = () => {
+    if (!canMutate) return;
+    setConfirmState({
+      isOpen: true,
+      title: 'Excluir Key Permanentemente',
+      message: 'Tem certeza de que deseja excluir permanentemente esta chave de licença? Esta ação não pode ser desfeita. A chave sumirá imediatamente de todas as visualizações do painel.',
+      confirmLabel: 'Excluir Permanentemente',
+      onConfirm: async () => {
+        setActionLoading(true);
+        try {
+          await api.deleteKey(licenseId);
+          markKeyAsDeletedLocally(licenseId);
+          toast.success('Chave de licença excluída com sucesso');
+          setConfirmState((prev) => ({ ...prev, isOpen: false }));
+          onBack();
+        } catch (err: unknown) {
+          const msg = err instanceof ApiError ? err.message : 'Falha ao excluir chave';
+          toast.error('Aviso de exclusão', msg);
+          markKeyAsDeletedLocally(licenseId);
+          setConfirmState((prev) => ({ ...prev, isOpen: false }));
+          onBack();
+        } finally {
+          setActionLoading(false);
         }
       },
     });
@@ -335,6 +385,12 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
     );
   }
 
+  const realStatus = license ? getRealLicenseStatus(license) : 'active';
+  const countdown = useMemo(() => {
+    if (!license) return null;
+    return getRemainingTime(license);
+  }, [license, currentTime]);
+
   const keyDisplay = license.keyPrefix
     ? `${license.keyPrefix}••••••••${license.keySuffix || ''}`
     : license.key || license.id;
@@ -359,7 +415,7 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
               >
                 {copied ? 'Copiada' : 'Copiar Key'}
               </Button>
-              <StatusText status={license.status} />
+              <StatusText status={realStatus} />
             </div>
             <p className="text-xs text-[#666666] dark:text-[#A1A1A1] mt-0.5">
               Cliente: <span className="text-[#111111] dark:text-neutral-200 font-medium">{license.clientName}</span>
@@ -387,9 +443,99 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
             >
               Renovar Licença
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 border-red-200 dark:border-red-900/40"
+              onClick={handleDeleteKey}
+              icon={<Trash2 className="w-3.5 h-3.5" />}
+            >
+              Excluir Key
+            </Button>
           </div>
         )}
       </div>
+
+      {/* Countdown Timer Live Card */}
+      {countdown && (
+        <div
+          className={`p-4 sm:p-5 rounded-xl border shadow-2xs transition-all ${
+            countdown.isExpired
+              ? 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-300'
+              : countdown.isLifetime
+              ? 'bg-neutral-50 dark:bg-[#161616]/70 border-[#E8E8E8] dark:border-[#252525]'
+              : countdown.isPending
+              ? 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300'
+              : 'bg-neutral-900 text-white dark:bg-[#141414] border-neutral-800 dark:border-[#2a2a2a]'
+          }`}
+        >
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Hourglass
+                  className={`w-4 h-4 shrink-0 ${
+                    countdown.isExpired
+                      ? 'text-red-500 animate-pulse'
+                      : countdown.isPending
+                      ? 'text-amber-500'
+                      : 'text-neutral-400'
+                  }`}
+                />
+                <span className="text-xs uppercase tracking-wider font-semibold font-mono">
+                  {countdown.isExpired
+                    ? 'Validade Expirada'
+                    : countdown.isLifetime
+                    ? 'Licença Vitalícia'
+                    : countdown.isPending
+                    ? 'Aguardando 1º Acesso do Dispositivo'
+                    : 'Tempo Restante até a Expiração'}
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-black/10 dark:bg-white/10 text-inherit border border-current/20">
+                  Ao vivo (1s)
+                </span>
+              </div>
+              <p className="text-xs opacity-85 font-sans leading-relaxed">
+                {countdown.isExpired
+                  ? 'Esta chave ultrapassou a data limite e foi desativada pelo sistema. Renove a licença para reativar.'
+                  : countdown.isLifetime
+                  ? 'Esta licença opera sem expiração programada.'
+                  : countdown.isPending
+                  ? `O prazo começará a contar no momento em que o aplicativo cliente efetuar o primeiro login (${license.duration || 30} ${license.durationUnit || 'dias'}).`
+                  : `Expiração exata: ${formatFullDateTime(license.expiresAt)}`}
+              </p>
+            </div>
+
+            {!countdown.isLifetime && !countdown.isPending && !countdown.isExpired && (
+              <div className="grid grid-cols-4 gap-2 text-center font-mono shrink-0">
+                <div className="p-2 sm:p-2.5 rounded-lg bg-white/10 dark:bg-black/30 border border-white/15 dark:border-white/10 min-w-[56px] sm:min-w-[66px]">
+                  <div className="text-base sm:text-xl font-bold tracking-tight text-white tabular-nums">
+                    {String(countdown.days).padStart(2, '0')}
+                  </div>
+                  <div className="text-[9px] uppercase tracking-wider text-neutral-300 dark:text-neutral-400">Dias</div>
+                </div>
+                <div className="p-2 sm:p-2.5 rounded-lg bg-white/10 dark:bg-black/30 border border-white/15 dark:border-white/10 min-w-[56px] sm:min-w-[66px]">
+                  <div className="text-base sm:text-xl font-bold tracking-tight text-white tabular-nums">
+                    {String(countdown.hours).padStart(2, '0')}
+                  </div>
+                  <div className="text-[9px] uppercase tracking-wider text-neutral-300 dark:text-neutral-400">Horas</div>
+                </div>
+                <div className="p-2 sm:p-2.5 rounded-lg bg-white/10 dark:bg-black/30 border border-white/15 dark:border-white/10 min-w-[56px] sm:min-w-[66px]">
+                  <div className="text-base sm:text-xl font-bold tracking-tight text-white tabular-nums">
+                    {String(countdown.minutes).padStart(2, '0')}
+                  </div>
+                  <div className="text-[9px] uppercase tracking-wider text-neutral-300 dark:text-neutral-400">Min</div>
+                </div>
+                <div className="p-2 sm:p-2.5 rounded-lg bg-white/10 dark:bg-black/30 border border-white/15 dark:border-white/10 min-w-[56px] sm:min-w-[66px]">
+                  <div className="text-base sm:text-xl font-bold tracking-tight text-emerald-400 tabular-nums">
+                    {String(countdown.seconds).padStart(2, '0')}
+                  </div>
+                  <div className="text-[9px] uppercase tracking-wider text-neutral-300 dark:text-neutral-400">Seg</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Grid: Details + Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -397,12 +543,15 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
         <div className="lg:col-span-2 space-y-6">
           {/* Card: Core Information */}
           <div className="rounded-xl border border-[#E8E8E8] dark:border-[#252525] bg-white dark:bg-[#111111] p-5 space-y-4 shadow-2xs">
-            <h3 className="text-sm font-semibold text-[#111111] dark:text-white tracking-tight flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-[#888888] dark:text-[#707070]" />
-              <span>Configuração da Licença</span>
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[#111111] dark:text-white tracking-tight flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-[#888888] dark:text-[#707070]" />
+                <span>Configuração & Metadados da Licença</span>
+              </h3>
+              <StatusText status={realStatus} />
+            </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs font-mono">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 text-xs font-mono">
               <div className="p-3 rounded-lg border border-[#E8E8E8] dark:border-[#1C1C1C] bg-neutral-50/50 dark:bg-[#161616]/40">
                 <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Cliente</span>
                 <span className="text-[#111111] dark:text-neutral-100 font-sans font-medium text-xs mt-0.5 block truncate">
@@ -411,7 +560,7 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
               </div>
 
               <div className="p-3 rounded-lg border border-[#E8E8E8] dark:border-[#1C1C1C] bg-neutral-50/50 dark:bg-[#161616]/40">
-                <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Referência</span>
+                <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Referência do Pedido</span>
                 <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block truncate">
                   {license.orderReference || '—'}
                 </span>
@@ -429,21 +578,50 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
               <div className="p-3 rounded-lg border border-[#E8E8E8] dark:border-[#1C1C1C] bg-neutral-50/50 dark:bg-[#161616]/40">
                 <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Modo de Ativação</span>
                 <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block">
-                  {license.activationMode === 'first_use' ? 'No 1º Uso' : 'Imediato'}
+                  {license.activationMode === 'first_use' ? 'No 1º Uso' : 'Imediato (Criação)'}
                 </span>
               </div>
 
               <div className="p-3 rounded-lg border border-[#E8E8E8] dark:border-[#1C1C1C] bg-neutral-50/50 dark:bg-[#161616]/40">
-                <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Data de Criação</span>
-                <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block">
-                  {license.createdAt ? new Date(license.createdAt).toLocaleDateString() : '—'}
+                <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Data & Hora de Criação</span>
+                <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block font-semibold">
+                  {formatFullDateTime(license.createdAt || (license as any).created_at)}
                 </span>
               </div>
 
               <div className="p-3 rounded-lg border border-[#E8E8E8] dark:border-[#1C1C1C] bg-neutral-50/50 dark:bg-[#161616]/40">
-                <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Expiração</span>
+                <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Data & Hora de Expiração</span>
+                <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block font-semibold">
+                  {formatFullDateTime(license.expiresAt || (license as any).expires_at)}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-lg border border-[#E8E8E8] dark:border-[#1C1C1C] bg-neutral-50/50 dark:bg-[#161616]/40">
+                <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Primeiro Handshake / Ativação</span>
                 <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block">
-                  {license.expiresAt ? new Date(license.expiresAt).toLocaleDateString() : 'Ativa'}
+                  {formatFullDateTime((license as any).activatedAt || (license as any).activated_at || (license as any).first_connected_at)}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-lg border border-[#E8E8E8] dark:border-[#1C1C1C] bg-neutral-50/50 dark:bg-[#161616]/40">
+                <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Duração Contratual</span>
+                <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block">
+                  {license.duration
+                    ? `${license.duration} ${
+                        license.durationUnit === 'hours'
+                          ? 'hora(s)'
+                          : license.durationUnit === 'minutes'
+                          ? 'minuto(s)'
+                          : 'dia(s)'
+                      }`
+                    : 'Vitalícia'}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-lg border border-[#E8E8E8] dark:border-[#1C1C1C] bg-neutral-50/50 dark:bg-[#161616]/40">
+                <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Status Real Calculado</span>
+                <span className="mt-1 block">
+                  <StatusText status={realStatus} />
                 </span>
               </div>
             </div>
@@ -624,6 +802,20 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
                 >
                   Arquivar Licença
                 </Button>
+              )}
+
+              {canMutate && (
+                <div className="pt-2 border-t border-[#E8E8E8] dark:border-[#252525]">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs justify-start text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 border-red-200 dark:border-red-900/40"
+                    onClick={handleDeleteKey}
+                    icon={<Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />}
+                  >
+                    Excluir Key Permanentemente
+                  </Button>
+                </div>
               )}
             </div>
           </div>

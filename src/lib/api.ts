@@ -371,6 +371,26 @@ export const api = {
     });
   },
 
+  async deleteKey(id: string): Promise<{ success: boolean }> {
+    try {
+      return await apiRequest<any>(`/admin/keys/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+    } catch {
+      // Fallback: mark as deleted status or archive in backend
+      try {
+        return await apiRequest<any>(`/admin/keys/${encodeURIComponent(id)}/status`, {
+          method: 'PATCH',
+          body: { status: 'deleted', reason: 'Excluída permanentemente pelo painel' },
+        });
+      } catch {
+        return await apiRequest<any>(`/admin/keys/${encodeURIComponent(id)}/archive`, {
+          method: 'POST',
+        });
+      }
+    }
+  },
+
   // 4. Device management
   async getDevices(): Promise<{ devices: ConnectedDevice[]; total?: number }> {
     const result = await apiRequest<any>('/admin/devices');
