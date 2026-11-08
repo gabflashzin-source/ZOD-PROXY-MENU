@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { api, ApiError, getApiBaseUrl, setApiBaseUrl } from '../lib/api';
+import { api, ApiError, getApiBaseUrl, setApiBaseUrl, CLOUDFLARE_WORKER_URL } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../components/ui/Toast';
 import type { SystemSettings, HealthCheckResponse } from '../types';
@@ -125,6 +125,13 @@ export const SettingsPage: React.FC = () => {
   const handleSaveApiUrl = () => {
     setApiBaseUrl(customApiUrl.trim());
     toast.success('URL Base da API atualizada');
+    loadSettingsAndHealth();
+  };
+
+  const handleResetApiUrl = () => {
+    setApiBaseUrl('');
+    setCustomApiUrl(CLOUDFLARE_WORKER_URL);
+    toast.success('URL restaurada para o Cloudflare Worker v4.0');
     loadSettingsAndHealth();
   };
 
@@ -430,8 +437,17 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <div className="pt-2">
-              <div className="text-xs font-medium text-[#111111] dark:text-neutral-200 mb-1.5 font-sans">
-                Rota Base da API (Proxy Local)
+              <div className="flex items-center justify-between mb-1.5 font-sans">
+                <span className="text-xs font-medium text-[#111111] dark:text-neutral-200">
+                  Rota Base da API (Endpoint Ativo)
+                </span>
+                <button
+                  type="button"
+                  onClick={handleResetApiUrl}
+                  className="text-[11px] text-[#666666] hover:text-black dark:text-[#A1A1A1] dark:hover:text-white underline cursor-pointer"
+                >
+                  Restaurar Cloudflare Worker Padrão
+                </button>
               </div>
               <div className="flex gap-2">
                 <Input

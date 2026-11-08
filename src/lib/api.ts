@@ -14,51 +14,55 @@ import type {
 
 export const CLOUDFLARE_WORKER_URL = 'https://dashboard-proxy-api.gabrieldacechen6.workers.dev';
 export const PROXY_API_BASE_URL = '/api/worker';
-export const DEFAULT_API_BASE_URL = PROXY_API_BASE_URL;
+export const DEFAULT_API_BASE_URL = CLOUDFLARE_WORKER_URL;
 const STORAGE_API_BASE_URL = 'zod_api_base_url';
+
+export function isLocalEnvironment(): boolean {
+  if (typeof window === 'undefined') return true;
+  const hostname = window.location.hostname;
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname.endsWith('.internal') ||
+    hostname.includes('webcontainer')
+  );
+}
 
 export function getApiBaseUrl(): string {
   const envUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
   const storedUrl = (typeof window !== 'undefined' ? localStorage.getItem(STORAGE_API_BASE_URL) : null)?.trim();
+  const isLocal = isLocalEnvironment();
 
-  // If a stored URL or env URL was pointing directly to the Cloudflare Worker domain,
-  // map it to the same-origin proxy (/api/worker) to prevent browser CORS preflight
-  // failures (Cloudflare Worker v4.0 returns HTTP 500 on OPTIONS preflight requests).
+  // 1. Explicit environment variable takes precedence
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '');
+  }
+
+  // 2. User or admin stored URL in localStorage
   if (storedUrl) {
-    if (
-      storedUrl === CLOUDFLARE_WORKER_URL ||
-      storedUrl.includes('gabrieldacechen6.workers.dev') ||
-      storedUrl === '/api/worker'
-    ) {
-      return PROXY_API_BASE_URL;
+    // If running on a remote host (e.g. Vercel) and storedUrl was previously set to '/api/worker'
+    // by earlier versions, purge it and default directly to the Cloudflare Worker URL.
+    if (!isLocal && (storedUrl === PROXY_API_BASE_URL || storedUrl === '/api/worker')) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(STORAGE_API_BASE_URL);
+      }
+      return CLOUDFLARE_WORKER_URL;
     }
     return storedUrl.replace(/\/+$/, '');
   }
 
-  if (envUrl) {
-    if (
-      envUrl === CLOUDFLARE_WORKER_URL ||
-      envUrl.includes('gabrieldacechen6.workers.dev') ||
-      envUrl === '/api/worker'
-    ) {
-      return PROXY_API_BASE_URL;
-    }
-    return envUrl.replace(/\/+$/, '');
-  }
-
-  return DEFAULT_API_BASE_URL;
+  // 3. Intelligent default:
+  // On remote/production deployments (e.g. Vercel, Netlify, custom domain), use Cloudflare Worker directly.
+  // Cloudflare Worker v4.0 has full CORS support (OPTIONS 204 with Access-Control-Allow-Origin: *).
+  return CLOUDFLARE_WORKER_URL;
 }
 
 export function setApiBaseUrl(url: string) {
   if (typeof window !== 'undefined') {
     if (url) {
-      const cleanUrl = url.trim();
-      // If user sets the direct worker URL, normalize to proxy to keep dashboard operational
-      if (cleanUrl === CLOUDFLARE_WORKER_URL || cleanUrl.includes('gabrieldacechen6.workers.dev')) {
-        localStorage.setItem(STORAGE_API_BASE_URL, PROXY_API_BASE_URL);
-      } else {
-        localStorage.setItem(STORAGE_API_BASE_URL, cleanUrl);
-      }
+      const cleanUrl = url.trim().replace(/\/+$/, '');
+      localStorage.setItem(STORAGE_API_BASE_URL, cleanUrl);
     } else {
       localStorage.removeItem(STORAGE_API_BASE_URL);
     }
@@ -149,24 +153,60 @@ export async function apiRequest<T = unknown>(
   }
 
   let response: Response;
+  let usedUrl = url;
+
+  // Primary execution with intelligent network failover
   try {
     response = await fetch(url, fetchInit);
   } catch (netErr: unknown) {
-    // If a direct request failed (e.g. browser CORS preflight failed on workers.dev),
-    // automatically fallback to the local same-origin proxy (/api/worker).
-    if (!url.startsWith(PROXY_API_BASE_URL) && !url.includes('/api/worker')) {
+    if (url.startsWith(PROXY_API_BASE_URL) || url.includes('/api/worker')) {
+      const fallbackUrl = `${CLOUDFLARE_WORKER_URL}${cleanEndpoint}`;
+      console.warn(`Proxy request to ${url} failed with network error. Retrying directly via Cloudflare Worker: ${fallbackUrl}`);
+      try {
+        response = await fetch(fallbackUrl, fetchInit);
+        usedUrl = fallbackUrl;
+      } catch (proxyErr: unknown) {
+        const msg = proxyErr instanceof Error ? proxyErr.message : 'Network error';
+        throw new ApiError(0, `Network failure reaching Cloudflare Worker API: ${msg}`, endpoint);
+      }
+    } else if (url.startsWith(CLOUDFLARE_WORKER_URL)) {
       const fallbackUrl = `${PROXY_API_BASE_URL}${cleanEndpoint}`;
       console.warn(`Direct request to ${url} failed with network error. Retrying via proxy: ${fallbackUrl}`);
       try {
         response = await fetch(fallbackUrl, fetchInit);
-        url = fallbackUrl;
-      } catch (proxyErr: unknown) {
-        const msg = proxyErr instanceof Error ? proxyErr.message : 'Network error';
+        usedUrl = fallbackUrl;
+      } catch {
+        const msg = netErr instanceof Error ? netErr.message : 'Network error';
         throw new ApiError(0, `Network failure reaching Cloudflare Worker API: ${msg}`, endpoint);
       }
     } else {
       const msg = netErr instanceof Error ? netErr.message : 'Network error';
       throw new ApiError(0, `Network failure reaching Cloudflare Worker API: ${msg}`, endpoint);
+    }
+  }
+
+  // HTTP-level Failover Check:
+  // When hosted on Vercel or a static CDN, requests to /api/worker can return HTTP 404 with HTML
+  // because no serverless proxy function is listening locally. If this happens, immediately retry
+  // directly against the live Cloudflare Worker v4.0 endpoint.
+  const initialContentType = response.headers.get('content-type') || '';
+  const isHtml = initialContentType.includes('text/html');
+  const wasProxyRequest = usedUrl.startsWith(PROXY_API_BASE_URL) || usedUrl.includes('/api/worker');
+
+  if (wasProxyRequest && (response.status === 404 || isHtml)) {
+    const directFallbackUrl = `${CLOUDFLARE_WORKER_URL}${cleanEndpoint}`;
+    try {
+      const fallbackRes = await fetch(directFallbackUrl, fetchInit);
+      if (fallbackRes.ok || fallbackRes.status !== 404) {
+        response = fallbackRes;
+        usedUrl = directFallbackUrl;
+        // Self-heal: clear stale localStorage proxy entry so subsequent calls go direct
+        if (typeof window !== 'undefined' && localStorage.getItem(STORAGE_API_BASE_URL) === PROXY_API_BASE_URL) {
+          localStorage.removeItem(STORAGE_API_BASE_URL);
+        }
+      }
+    } catch (fbErr) {
+      console.warn('Fallback direct request error:', fbErr);
     }
   }
 
@@ -176,7 +216,7 @@ export async function apiRequest<T = unknown>(
     if (refreshedToken) {
       headers['Authorization'] = `Bearer ${refreshedToken}`;
       try {
-        response = await fetch(url, { ...fetchInit, headers });
+        response = await fetch(usedUrl, { ...fetchInit, headers });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Network error during retry';
         throw new ApiError(0, `Network failure on retried request: ${msg}`, endpoint);
@@ -210,7 +250,11 @@ export async function apiRequest<T = unknown>(
       else if (typeof errObj.message === 'string') errorMessage = errObj.message;
       if (typeof errObj.detail === 'string') detailMessage = errObj.detail;
     } else if (typeof rawData === 'string' && rawData.length > 0) {
-      errorMessage = rawData;
+      if (rawData.includes('<html') || rawData.includes('<!DOCTYPE')) {
+        errorMessage = `Serviço ou endpoint não encontrado (${response.status})`;
+      } else {
+        errorMessage = rawData;
+      }
     }
 
     // Friendly translation of common HTTP errors
