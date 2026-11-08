@@ -61,7 +61,7 @@ const MainApp: React.FC = () => {
       onNavigate={handleNavigate}
       onOpenCreateLicense={() => setCreateModalOpen(true)}
     >
-      <ErrorBoundary key={activeTab} fallbackTitle={`Failed to load ${activeTab} view`}>
+      <ErrorBoundary key={`${activeTab}-${selectedLicenseId || 'main'}`} fallbackTitle={`Failed to load ${activeTab} view`}>
         {activeTab === 'overview' && (
           <OverviewPage
             onNavigate={(tab, detailId) => handleNavigate(tab, detailId)}

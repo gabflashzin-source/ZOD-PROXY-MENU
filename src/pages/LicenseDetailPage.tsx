@@ -255,6 +255,49 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
     });
   };
 
+  const toDeviceStatus = (st?: unknown): 'active' | 'offline' | 'unlinked' => {
+    const clean = String(st || 'active').toLowerCase().trim();
+    if (clean === 'unlinked') return 'unlinked';
+    if (clean === 'offline') return 'offline';
+    return 'active';
+  };
+
+  const rawDevices = (license as any)?.devices;
+
+  const connectedDevices: ConnectedDevice[] = useMemo(() => {
+    if (!license || !rawDevices) return [];
+    if (Array.isArray(rawDevices)) {
+      return rawDevices.map((d: any, idx: number) => ({
+        id: String(d?.id || d?.deviceId || d?.device_id || `dev-${idx}`),
+        deviceId: String(d?.deviceId || d?.device_id || d?.id || `DEV-${idx}`),
+        deviceName: d?.deviceName || d?.device_name || d?.name || 'Dispositivo Cliente',
+        deviceModel: d?.deviceModel || d?.device_model || d?.model,
+        licenseId: license.id,
+        firstConnectedAt: typeof d?.firstConnectedAt === 'string' ? d.firstConnectedAt : d?.first_connected_at,
+        lastActivityAt: typeof d?.lastActivityAt === 'string' ? d.lastActivityAt : d?.last_activity_at,
+        status: toDeviceStatus(d?.status || d?.state),
+      }));
+    }
+    if (typeof rawDevices === 'object' && rawDevices !== null) {
+      return Object.entries(rawDevices).map(([k, v]: [string, any], idx: number) => {
+        const valObj = typeof v === 'object' && v !== null ? v : {};
+        return {
+          id: String(valObj?.id || valObj?.deviceId || valObj?.device_id || k),
+          deviceId: String(valObj?.deviceId || valObj?.device_id || k),
+          deviceName: valObj?.deviceName || valObj?.device_name || valObj?.name || 'Dispositivo Cliente',
+          deviceModel: valObj?.deviceModel || valObj?.device_model || valObj?.model,
+          licenseId: license.id,
+          firstConnectedAt: typeof valObj?.firstConnectedAt === 'string' ? valObj.firstConnectedAt : valObj?.first_connected_at,
+          lastActivityAt: typeof valObj?.lastActivityAt === 'string' ? valObj.lastActivityAt : valObj?.last_activity_at,
+          status: toDeviceStatus(valObj?.status || valObj?.state),
+        };
+      });
+    }
+    return [];
+  }, [rawDevices, license]);
+
+  const activeDevices = connectedDevices.filter((d) => d.status !== 'unlinked');
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -296,48 +339,6 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
     ? `${license.keyPrefix}••••••••${license.keySuffix || ''}`
     : license.key || license.id;
 
-  const rawDevices = (license as any)?.devices;
-  const toDeviceStatus = (st?: unknown): 'active' | 'offline' | 'unlinked' => {
-    const clean = String(st || 'active').toLowerCase().trim();
-    if (clean === 'unlinked') return 'unlinked';
-    if (clean === 'offline') return 'offline';
-    return 'active';
-  };
-
-  const connectedDevices: ConnectedDevice[] = useMemo(() => {
-    if (!rawDevices) return [];
-    if (Array.isArray(rawDevices)) {
-      return rawDevices.map((d: any, idx: number) => ({
-        id: String(d?.id || d?.deviceId || d?.device_id || `dev-${idx}`),
-        deviceId: String(d?.deviceId || d?.device_id || d?.id || `DEV-${idx}`),
-        deviceName: d?.deviceName || d?.device_name || d?.name || 'Dispositivo Cliente',
-        deviceModel: d?.deviceModel || d?.device_model || d?.model,
-        licenseId: license.id,
-        firstConnectedAt: typeof d?.firstConnectedAt === 'string' ? d.firstConnectedAt : d?.first_connected_at,
-        lastActivityAt: typeof d?.lastActivityAt === 'string' ? d.lastActivityAt : d?.last_activity_at,
-        status: toDeviceStatus(d?.status || d?.state),
-      }));
-    }
-    if (typeof rawDevices === 'object' && rawDevices !== null) {
-      return Object.entries(rawDevices).map(([k, v]: [string, any], idx: number) => {
-        const valObj = typeof v === 'object' && v !== null ? v : {};
-        return {
-          id: String(valObj?.id || valObj?.deviceId || valObj?.device_id || k),
-          deviceId: String(valObj?.deviceId || valObj?.device_id || k),
-          deviceName: valObj?.deviceName || valObj?.device_name || valObj?.name || 'Dispositivo Cliente',
-          deviceModel: valObj?.deviceModel || valObj?.device_model || valObj?.model,
-          licenseId: license.id,
-          firstConnectedAt: typeof valObj?.firstConnectedAt === 'string' ? valObj.firstConnectedAt : valObj?.first_connected_at,
-          lastActivityAt: typeof valObj?.lastActivityAt === 'string' ? valObj.lastActivityAt : valObj?.last_activity_at,
-          status: toDeviceStatus(valObj?.status || valObj?.state),
-        };
-      });
-    }
-    return [];
-  }, [rawDevices, license?.id]);
-
-  const activeDevices = connectedDevices.filter((d) => d.status !== 'unlinked');
-
   return (
     <div className="space-y-6">
       {/* Top Header & Breadcrumb Nav */}
@@ -347,8 +348,8 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
             Voltar
           </Button>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-lg font-bold tracking-tight text-[#111111] dark:text-white font-mono">{keyDisplay}</h1>
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <h1 className="text-base sm:text-lg font-bold tracking-tight text-[#111111] dark:text-white font-mono break-all">{keyDisplay}</h1>
               <Button
                 variant="outline"
                 size="xs"

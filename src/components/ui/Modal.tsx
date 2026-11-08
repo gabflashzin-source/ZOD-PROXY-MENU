@@ -57,7 +57,7 @@ export const Modal: React.FC<ModalProps> = ({
     >
       <div
         ref={modalRef}
-        className={`w-full ${maxWidthClasses[maxWidth]} bg-white dark:bg-[#111111] text-[#111111] dark:text-[#FFFFFF] border border-[#E8E8E8] dark:border-[#252525] rounded-2xl shadow-2xl p-6 relative my-8`}
+        className={`w-full ${maxWidthClasses[maxWidth]} bg-white dark:bg-[#111111] text-[#111111] dark:text-[#FFFFFF] border border-[#E8E8E8] dark:border-[#252525] rounded-2xl shadow-2xl p-4 sm:p-6 relative my-4 sm:my-8 max-h-[92vh] overflow-y-auto`}
       >
         <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#E8E8E8] dark:border-[#252525]">
           <div>

@@ -356,80 +356,148 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({ onNavigateToLicense })
             onAction={searchQuery ? () => setSearchQuery('') : undefined}
           />
         ) : (
-          <div className="border border-[#E8E8E8] dark:border-[#252525] rounded-xl overflow-hidden bg-white dark:bg-[#111111] shadow-2xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-[#E8E8E8] dark:border-[#252525] bg-neutral-50/70 dark:bg-[#161616]/40 text-[#666666] dark:text-[#A1A1A1]">
-                    <th className="py-3 px-4 font-medium">Dispositivo & Modelo</th>
-                    <th className="py-3 px-4 font-medium">Identificador (HWID)</th>
-                    <th className="py-3 px-4 font-medium">Licença Vinculada</th>
-                    <th className="py-3 px-4 font-medium">Status</th>
-                    <th className="py-3 px-4 font-medium">Última Atividade</th>
-                    <th className="py-3 px-4 font-medium text-right">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E8E8E8] dark:divide-[#1C1C1C]">
-                  {filteredDevices.map((dev) => (
-                    <tr key={dev.id} className="hover:bg-neutral-50 dark:hover:bg-[#161616]/40 transition-colors">
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-[#111111] dark:text-white">
-                          {dev.deviceName || 'Dispositivo Cliente'}
-                        </div>
-                        <div className="text-[11px] text-[#888888] dark:text-[#707070] font-mono">
-                          {dev.deviceModel || 'Android'}
-                          {dev.appVersion && ` · v${dev.appVersion}`}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 font-mono text-[#666666] dark:text-neutral-400 text-[11px] select-all">
-                        {dev.deviceId}
-                      </td>
-                      <td className="py-3 px-4">
-                        {dev.licenseId ? (
-                          <button
-                            onClick={() => onNavigateToLicense(dev.licenseId)}
-                            className="text-left group flex items-center gap-1.5 hover:underline transition-colors"
-                          >
-                            <div>
-                              <div className="text-[#111111] dark:text-white font-medium">
-                                {dev.licenseClient}
-                              </div>
-                              <div className="text-[10px] text-[#888888] dark:text-[#707070] font-mono">
-                                {dev.licenseKeyDisplay}
-                              </div>
-                            </div>
-                            <ExternalLink className="w-3 h-3 text-[#888888] dark:text-[#707070] opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </button>
-                        ) : (
-                          <span className="text-[#888888] dark:text-[#707070] font-mono text-[11px]">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <StatusText status={dev.status} />
-                      </td>
-                      <td className="py-3 px-4 font-mono tabular-nums text-[#666666] dark:text-neutral-400 text-[11px] whitespace-nowrap">
-                        {formatDate(dev.lastActivityAt)}
-                      </td>
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
-                        {canMutate && dev.status !== 'unlinked' && dev.licenseId && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleUnlink(dev)}
-                            className="h-7 px-2.5 text-xs text-[#666666] dark:text-neutral-300"
-                            icon={<Unlink className="w-3 h-3" />}
-                          >
-                            Desvincular
-                          </Button>
-                        )}
-                        {dev.status === 'unlinked' && (
-                          <span className="text-[11px] text-[#888888] dark:text-[#707070] font-mono">Desvinculado</span>
-                        )}
-                      </td>
+          <div className="space-y-4">
+            {/* Mobile Device Cards (< 640px) */}
+            <div className="block sm:hidden space-y-3">
+              {filteredDevices.map((dev) => (
+                <div
+                  key={dev.id}
+                  className="p-3.5 rounded-xl border border-[#E8E8E8] dark:border-[#252525] bg-white dark:bg-[#111111] shadow-2xs space-y-2.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-xs text-[#111111] dark:text-white truncate">
+                        {dev.deviceName || 'Dispositivo Cliente'}
+                      </div>
+                      <div className="text-[10px] text-[#888888] dark:text-[#707070] font-mono mt-0.5">
+                        {dev.deviceModel || 'Android'}
+                        {dev.appVersion && ` · v${dev.appVersion}`}
+                      </div>
+                    </div>
+                    <StatusText status={dev.status} />
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-neutral-50 dark:bg-[#161616]/60 border border-[#E8E8E8] dark:border-[#252525] space-y-1">
+                    <span className="text-[10px] text-[#888888] dark:text-[#707070] uppercase font-mono block">
+                      Identificador de Hardware (HWID)
+                    </span>
+                    <span className="font-mono text-xs text-[#111111] dark:text-neutral-200 break-all select-all block">
+                      {dev.deviceId}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] font-mono text-[#666666] dark:text-[#A1A1A1] pt-0.5">
+                    <div>
+                      {dev.licenseId ? (
+                        <button
+                          onClick={() => onNavigateToLicense(dev.licenseId)}
+                          className="text-left font-medium text-[#111111] dark:text-white hover:underline flex items-center gap-1"
+                        >
+                          <span>{dev.licenseClient}</span>
+                          <ExternalLink className="w-3 h-3 text-[#888888]" />
+                        </button>
+                      ) : (
+                        <span>Sem licença</span>
+                      )}
+                    </div>
+                    <span className="tabular-nums">
+                      {formatDate(dev.lastActivityAt)}
+                    </span>
+                  </div>
+
+                  {canMutate && dev.status !== 'unlinked' && dev.licenseId && (
+                    <div className="pt-2 border-t border-[#E8E8E8] dark:border-[#1C1C1C]">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleUnlink(dev)}
+                        className="w-full text-xs h-8 justify-center"
+                        icon={<Unlink className="w-3.5 h-3.5" />}
+                      >
+                        Desvincular Hardware
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table (>= 640px) */}
+            <div className="hidden sm:block border border-[#E8E8E8] dark:border-[#252525] rounded-xl overflow-hidden bg-white dark:bg-[#111111] shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#E8E8E8] dark:border-[#252525] bg-neutral-50/70 dark:bg-[#161616]/40 text-[#666666] dark:text-[#A1A1A1]">
+                      <th className="py-3 px-4 font-medium">Dispositivo & Modelo</th>
+                      <th className="py-3 px-4 font-medium">Identificador (HWID)</th>
+                      <th className="py-3 px-4 font-medium">Licença Vinculada</th>
+                      <th className="py-3 px-4 font-medium">Status</th>
+                      <th className="py-3 px-4 font-medium">Última Atividade</th>
+                      <th className="py-3 px-4 font-medium text-right">Ações</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-[#E8E8E8] dark:divide-[#1C1C1C]">
+                    {filteredDevices.map((dev) => (
+                      <tr key={dev.id} className="hover:bg-neutral-50 dark:hover:bg-[#161616]/40 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-[#111111] dark:text-white">
+                            {dev.deviceName || 'Dispositivo Cliente'}
+                          </div>
+                          <div className="text-[11px] text-[#888888] dark:text-[#707070] font-mono">
+                            {dev.deviceModel || 'Android'}
+                            {dev.appVersion && ` · v${dev.appVersion}`}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-[#666666] dark:text-neutral-400 text-[11px] select-all">
+                          {dev.deviceId}
+                        </td>
+                        <td className="py-3 px-4">
+                          {dev.licenseId ? (
+                            <button
+                              onClick={() => onNavigateToLicense(dev.licenseId)}
+                              className="text-left group flex items-center gap-1.5 hover:underline transition-colors"
+                            >
+                              <div>
+                                <div className="text-[#111111] dark:text-white font-medium">
+                                  {dev.licenseClient}
+                                </div>
+                                <div className="text-[10px] text-[#888888] dark:text-[#707070] font-mono">
+                                  {dev.licenseKeyDisplay}
+                                </div>
+                              </div>
+                              <ExternalLink className="w-3 h-3 text-[#888888] dark:text-[#707070] opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </button>
+                          ) : (
+                            <span className="text-[#888888] dark:text-[#707070] font-mono text-[11px]">—</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <StatusText status={dev.status} />
+                        </td>
+                        <td className="py-3 px-4 font-mono tabular-nums text-[#666666] dark:text-neutral-400 text-[11px] whitespace-nowrap">
+                          {formatDate(dev.lastActivityAt)}
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                          {canMutate && dev.status !== 'unlinked' && dev.licenseId && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleUnlink(dev)}
+                              className="h-7 px-2.5 text-xs text-[#666666] dark:text-neutral-300"
+                              icon={<Unlink className="w-3 h-3" />}
+                            >
+                              Desvincular
+                            </Button>
+                          )}
+                          {dev.status === 'unlinked' && (
+                            <span className="text-[11px] text-[#888888] dark:text-[#707070] font-mono">Desvinculado</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}

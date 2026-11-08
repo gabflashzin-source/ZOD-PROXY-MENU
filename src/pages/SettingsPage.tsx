@@ -23,6 +23,7 @@ import {
   Heart,
   Terminal,
   ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 import { getEffectiveFirebaseConfig } from '../lib/firebase';
 
@@ -198,7 +199,7 @@ export const SettingsPage: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
               {/* Dark Option */}
               <button
                 type="button"
@@ -222,6 +223,33 @@ export const SettingsPage: React.FC = () => {
                 </div>
                 <div className="text-[11px] text-[#666666] dark:text-[#A1A1A1] font-mono mt-2">
                   Fundo #050505 · Superfície #111111
+                </div>
+              </button>
+
+              {/* Special Theme Option */}
+              <button
+                type="button"
+                onClick={() => setTheme('special')}
+                className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                  theme === 'special'
+                    ? 'border-[#FF2E93] ring-1 ring-[#FF2E93] bg-[#180816] shadow-[0_0_15px_rgba(255,46,147,0.3)]'
+                    : 'border-[#E8E8E8] dark:border-[#252525] hover:border-[#FF2E93]/60 bg-white dark:bg-[#090909]'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[#FF2E93]">
+                    <Sparkles className="w-4 h-4 text-[#FF2E93]" />
+                    <span>Especial (Rosa & Preto)</span>
+                  </div>
+                  {theme === 'special' && <CheckCircle2 className="w-4 h-4 text-[#FF2E93]" />}
+                </div>
+                <div className="mt-3 p-2 rounded-lg bg-[#060205] border border-[#3D1429] space-y-1.5">
+                  <div className="h-2 w-12 bg-[#FF2E93] rounded-full shadow-[0_0_8px_rgba(255,46,147,0.5)]" />
+                  <div className="h-1.5 w-full bg-white rounded-full opacity-90" />
+                </div>
+                <div className="text-[11px] text-[#F3B0D3] font-mono mt-2 flex items-center justify-between">
+                  <span>Rosa, Preto & Branco</span>
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-[#FF2E93]/20 text-[#FF2E93] font-semibold">VIP</span>
                 </div>
               </button>
 

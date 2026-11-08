@@ -33,6 +33,65 @@
   --status-pending: #F59E0B;
 }
 
+.theme-special {
+  --bg: #060205;
+  --sidebar: #0B0409;
+  --surface: #120610;
+  --surface-elevated: #1A0A17;
+  --border: #3D1429;
+  --border-subtle: #2A0D1B;
+  --text-primary: #FFFFFF;
+  --text-secondary: #F3B0D3;
+  --text-muted: #9F597E;
+  --accent: #FF2E93;
+  --status-active: #10B981;
+  --status-expired: #FF2E93;
+  --status-pending: #F472B6;
+}
+
+/* Theme Special overrides for luxury Rosa, Preto e Branco feel */
+.theme-special {
+  background-color: #060205 !important;
+  color: #FFFFFF !important;
+}
+
+.theme-special aside {
+  background-color: #0B0409 !important;
+  border-color: #3D1429 !important;
+}
+
+.theme-special header {
+  background-color: rgba(11, 4, 9, 0.9) !important;
+  border-color: #3D1429 !important;
+}
+
+.theme-special footer {
+  background-color: rgba(11, 4, 9, 0.7) !important;
+  border-color: #3D1429 !important;
+}
+
+.theme-special .azod-logo-badge,
+.theme-special [data-logo="azod"] {
+  background-color: #FF2E93 !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 14px rgba(255, 46, 147, 0.5) !important;
+}
+
+.theme-special button[class*="bg-[#111111]"],
+.theme-special button[class*="dark:bg-white"],
+.theme-special .btn-primary-accent {
+  background-color: #FF2E93 !important;
+  color: #FFFFFF !important;
+  border-color: #FF2E93 !important;
+  box-shadow: 0 0 14px rgba(255, 46, 147, 0.4) !important;
+}
+
+.theme-special ::selection {
+  background-color: #FF2E93 !important;
+  color: #FFFFFF !important;
+}
+
+
 @layer base {
   * {
     border-color: var(--border);

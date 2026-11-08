@@ -1,10 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
-export type ThemeMode = 'dark' | 'light' | 'system';
+export type ThemeMode = 'dark' | 'light' | 'special' | 'system';
 
 interface ThemeContextValue {
   theme: ThemeMode;
-  resolvedTheme: 'dark' | 'light';
+  resolvedTheme: 'dark' | 'light' | 'special';
   setTheme: (theme: ThemeMode) => void;
 }
 
@@ -21,7 +21,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (typeof window === 'undefined') return 'dark';
     try {
       const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
-      if (saved === 'dark' || saved === 'light' || saved === 'system') {
+      if (saved === 'dark' || saved === 'light' || saved === 'special' || saved === 'system') {
         return saved;
       }
     } catch {
@@ -30,12 +30,13 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return 'dark';
   });
 
-  const [resolvedTheme, setResolvedTheme] = useState<'dark' | 'light'>('dark');
+  const [resolvedTheme, setResolvedTheme] = useState<'dark' | 'light' | 'special'>('dark');
 
   useEffect(() => {
     const root = document.documentElement;
 
-    const computeResolved = (selected: ThemeMode): 'dark' | 'light' => {
+    const computeResolved = (selected: ThemeMode): 'dark' | 'light' | 'special' => {
+      if (selected === 'special') return 'special';
       if (selected === 'system') {
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       }
@@ -45,12 +46,16 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const resolved = computeResolved(theme);
     setResolvedTheme(resolved);
 
-    if (resolved === 'dark') {
-      root.classList.add('dark');
+    if (resolved === 'special') {
+      root.classList.add('dark', 'theme-special');
       root.classList.remove('light');
       root.style.colorScheme = 'dark';
+    } else if (resolved === 'dark') {
+      root.classList.add('dark');
+      root.classList.remove('light', 'theme-special');
+      root.style.colorScheme = 'dark';
     } else {
-      root.classList.remove('dark');
+      root.classList.remove('dark', 'theme-special');
       root.classList.add('light');
       root.style.colorScheme = 'light';
     }
@@ -69,10 +74,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setResolvedTheme(next);
         if (next === 'dark') {
           root.classList.add('dark');
-          root.classList.remove('light');
+          root.classList.remove('light', 'theme-special');
           root.style.colorScheme = 'dark';
         } else {
-          root.classList.remove('dark');
+          root.classList.remove('dark', 'theme-special');
           root.classList.add('light');
           root.style.colorScheme = 'light';
         }

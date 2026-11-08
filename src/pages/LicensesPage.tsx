@@ -245,149 +245,235 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
           onAction={searchQuery ? () => setSearchQuery('') : onOpenCreateModal}
         />
       ) : (
-        <div className="border border-[#E8E8E8] dark:border-[#252525] rounded-xl overflow-hidden bg-white dark:bg-[#111111] shadow-2xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-[#E8E8E8] dark:border-[#252525] bg-neutral-50/70 dark:bg-[#161616]/40 text-[#666666] dark:text-[#A1A1A1] select-none">
-                  <th
-                    className="py-3 px-4 font-medium cursor-pointer hover:text-[#111111] dark:hover:text-white"
-                    onClick={() => toggleSort('clientName')}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Cliente & Chave</span>
-                      <ArrowUpDown className="w-3 h-3 text-[#888888] dark:text-[#707070]" />
-                    </div>
-                  </th>
-                  <th
-                    className="py-3 px-4 font-medium cursor-pointer hover:text-[#111111] dark:hover:text-white"
-                    onClick={() => toggleSort('status')}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Status</span>
-                      <ArrowUpDown className="w-3 h-3 text-[#888888] dark:text-[#707070]" />
-                    </div>
-                  </th>
-                  <th className="py-3 px-4 font-medium">Hardware / Dispositivos</th>
-                  <th
-                    className="py-3 px-4 font-medium cursor-pointer hover:text-[#111111] dark:hover:text-white"
-                    onClick={() => toggleSort('createdAt')}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Criação</span>
-                      <ArrowUpDown className="w-3 h-3 text-[#888888] dark:text-[#707070]" />
-                    </div>
-                  </th>
-                  <th
-                    className="py-3 px-4 font-medium cursor-pointer hover:text-[#111111] dark:hover:text-white"
-                    onClick={() => toggleSort('expiresAt')}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Expiração</span>
-                      <ArrowUpDown className="w-3 h-3 text-[#888888] dark:text-[#707070]" />
-                    </div>
-                  </th>
-                  <th className="py-3 px-4 font-medium text-right">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E8E8E8] dark:divide-[#1C1C1C]">
-                {paginatedKeys.map((license) => {
-                  const keyDisplay = license.keyPrefix
-                    ? `${license.keyPrefix}••••${license.keySuffix || ''}`
-                    : license.key || license.id;
-                  const devicesUsed = license.devicesUsed ?? (license.devices?.length || 0);
-                  const deviceLimitText =
-                    license.deviceLimit === -1 || license.deviceLimit === 0
-                      ? '∞'
-                      : String(license.deviceLimit);
+        <div className="space-y-4">
+          {/* Mobile Card List (< 640px) */}
+          <div className="block sm:hidden space-y-3">
+            {paginatedKeys.map((license) => {
+              const keyDisplay = license.keyPrefix
+                ? `${license.keyPrefix}••••${license.keySuffix || ''}`
+                : license.key || license.id;
+              const devicesUsed = license.devicesUsed ?? (license.devices?.length || 0);
+              const deviceLimitText =
+                license.deviceLimit === -1 || license.deviceLimit === 0
+                  ? '∞'
+                  : String(license.deviceLimit);
 
-                  return (
-                    <tr
-                      key={license.id}
-                      onClick={() => onSelectLicense(license.id)}
-                      className="hover:bg-neutral-50 dark:hover:bg-[#161616]/60 cursor-pointer transition-colors group"
+              return (
+                <div
+                  key={license.id}
+                  onClick={() => onSelectLicense(license.id)}
+                  className="p-3.5 rounded-xl border border-[#E8E8E8] dark:border-[#252525] bg-white dark:bg-[#111111] shadow-2xs space-y-2.5 active:scale-[0.99] transition-transform cursor-pointer"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-xs text-[#111111] dark:text-white truncate">
+                        {license.clientName || 'Cliente Geral'}
+                      </div>
+                      {license.orderReference && (
+                        <div className="text-[10px] text-[#888888] dark:text-[#707070] font-mono mt-0.5 truncate">
+                          Ref: {license.orderReference}
+                        </div>
+                      )}
+                    </div>
+                    <StatusText status={license.status} />
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-neutral-50 dark:bg-[#161616]/60 border border-[#E8E8E8] dark:border-[#252525] flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-semibold text-[#111111] dark:text-neutral-200 truncate">
+                      {keyDisplay}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => handleCopyKey(license, e)}
+                      className="px-2 py-1 rounded bg-white dark:bg-[#252525] border border-[#E8E8E8] dark:border-[#333333] text-[11px] font-mono font-medium flex items-center gap-1 shrink-0 hover:bg-neutral-100 dark:hover:bg-[#2c2c2c]"
+                      aria-label="Copiar chave"
                     >
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-[#111111] dark:text-white group-hover:underline">
-                          {license.clientName || 'Cliente Geral'}
-                        </div>
-                        <div className="font-mono text-[11px] text-[#666666] dark:text-[#A1A1A1] mt-0.5 flex items-center gap-2">
-                          <span className="font-semibold">{keyDisplay}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => handleCopyKey(license, e)}
-                            className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/10 text-[#888888] hover:text-[#111111] dark:text-[#707070] dark:hover:text-white transition-colors"
-                            title="Copiar Key"
-                            aria-label="Copiar chave de licença"
-                          >
-                            {copiedId === license.id ? (
-                              <Check className="w-3 h-3 text-emerald-500" />
-                            ) : (
-                              <Copy className="w-3 h-3" />
-                            )}
-                          </button>
-                          {license.orderReference && (
-                            <span className="text-[#888888] dark:text-[#707070]">· Pedido: {license.orderReference}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <StatusText status={license.status} />
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap font-mono tabular-nums text-[#111111] dark:text-neutral-300">
-                        <span className="flex items-center gap-1.5">
-                          <Smartphone className="w-3.5 h-3.5 text-[#888888] dark:text-[#707070]" />
-                          <span>
-                            {devicesUsed} / {deviceLimitText}
-                          </span>
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap font-mono tabular-nums text-[#666666] dark:text-[#A1A1A1] text-[11px]">
-                        {license.createdAt
-                          ? new Date(license.createdAt).toLocaleDateString()
-                          : '—'}
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap font-mono tabular-nums text-[#666666] dark:text-[#A1A1A1] text-[11px]">
-                        {license.expiresAt
-                          ? new Date(license.expiresAt).toLocaleDateString()
-                          : license.activationMode === 'first_use' && !license.activatedAt
-                          ? 'No 1º uso'
-                          : 'Vitalícia'}
-                      </td>
-                      <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => handleCopyKey(license, e)}
-                            className="text-xs h-7 px-2.5"
-                            icon={
-                              copiedId === license.id ? (
+                      {copiedId === license.id ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-500" />
+                          <span className="text-emerald-500 text-[10px]">Copiada</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3 text-[#666666] dark:text-[#A1A1A1]" />
+                          <span className="text-[10px]">Copiar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-[#666666] dark:text-[#A1A1A1] font-mono pt-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <Smartphone className="w-3 h-3 text-[#888888] dark:text-[#707070]" />
+                      <span>{devicesUsed} / {deviceLimitText} disp.</span>
+                    </div>
+                    <div>
+                      {license.expiresAt
+                        ? `Expira: ${new Date(license.expiresAt).toLocaleDateString()}`
+                        : license.activationMode === 'first_use' && !license.activatedAt
+                        ? 'No 1º uso'
+                        : 'Vitalícia'}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#E8E8E8] dark:border-[#1C1C1C] flex items-center justify-between">
+                    <span className="text-[10px] text-[#888888] dark:text-[#707070] font-mono">
+                      {license.createdAt ? new Date(license.createdAt).toLocaleDateString() : '—'}
+                    </span>
+                    <span className="text-xs font-medium text-[#111111] dark:text-white flex items-center gap-1">
+                      Ver Detalhes <ExternalLink className="w-3 h-3" />
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop Data Table (>= 640px) */}
+          <div className="hidden sm:block border border-[#E8E8E8] dark:border-[#252525] rounded-xl overflow-hidden bg-white dark:bg-[#111111] shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-[#E8E8E8] dark:border-[#252525] bg-neutral-50/70 dark:bg-[#161616]/40 text-[#666666] dark:text-[#A1A1A1] select-none">
+                    <th
+                      className="py-3 px-4 font-medium cursor-pointer hover:text-[#111111] dark:hover:text-white"
+                      onClick={() => toggleSort('clientName')}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Cliente & Chave</span>
+                        <ArrowUpDown className="w-3 h-3 text-[#888888] dark:text-[#707070]" />
+                      </div>
+                    </th>
+                    <th
+                      className="py-3 px-4 font-medium cursor-pointer hover:text-[#111111] dark:hover:text-white"
+                      onClick={() => toggleSort('status')}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Status</span>
+                        <ArrowUpDown className="w-3 h-3 text-[#888888] dark:text-[#707070]" />
+                      </div>
+                    </th>
+                    <th className="py-3 px-4 font-medium">Hardware / Dispositivos</th>
+                    <th
+                      className="py-3 px-4 font-medium cursor-pointer hover:text-[#111111] dark:hover:text-white"
+                      onClick={() => toggleSort('createdAt')}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Criação</span>
+                        <ArrowUpDown className="w-3 h-3 text-[#888888] dark:text-[#707070]" />
+                      </div>
+                    </th>
+                    <th
+                      className="py-3 px-4 font-medium cursor-pointer hover:text-[#111111] dark:hover:text-white"
+                      onClick={() => toggleSort('expiresAt')}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Expiração</span>
+                        <ArrowUpDown className="w-3 h-3 text-[#888888] dark:text-[#707070]" />
+                      </div>
+                    </th>
+                    <th className="py-3 px-4 font-medium text-right">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E8E8E8] dark:divide-[#1C1C1C]">
+                  {paginatedKeys.map((license) => {
+                    const keyDisplay = license.keyPrefix
+                      ? `${license.keyPrefix}••••${license.keySuffix || ''}`
+                      : license.key || license.id;
+                    const devicesUsed = license.devicesUsed ?? (license.devices?.length || 0);
+                    const deviceLimitText =
+                      license.deviceLimit === -1 || license.deviceLimit === 0
+                        ? '∞'
+                        : String(license.deviceLimit);
+
+                    return (
+                      <tr
+                        key={license.id}
+                        onClick={() => onSelectLicense(license.id)}
+                        className="hover:bg-neutral-50 dark:hover:bg-[#161616]/60 cursor-pointer transition-colors group"
+                      >
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-[#111111] dark:text-white group-hover:underline">
+                            {license.clientName || 'Cliente Geral'}
+                          </div>
+                          <div className="font-mono text-[11px] text-[#666666] dark:text-[#A1A1A1] mt-0.5 flex items-center gap-2">
+                            <span className="font-semibold">{keyDisplay}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyKey(license, e)}
+                              className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/10 text-[#888888] hover:text-[#111111] dark:text-[#707070] dark:hover:text-white transition-colors"
+                              title="Copiar Key"
+                              aria-label="Copiar chave de licença"
+                            >
+                              {copiedId === license.id ? (
                                 <Check className="w-3 h-3 text-emerald-500" />
                               ) : (
                                 <Copy className="w-3 h-3" />
-                              )
-                            }
-                            title="Copiar Chave da Licença"
-                          >
-                            {copiedId === license.id ? 'Copiada' : 'Copiar'}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onSelectLicense(license.id)}
-                            className="text-xs h-7 px-2.5"
-                            icon={<ExternalLink className="w-3 h-3" />}
-                          >
-                            Ver
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                              )}
+                            </button>
+                            {license.orderReference && (
+                              <span className="text-[#888888] dark:text-[#707070]">· Pedido: {license.orderReference}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <StatusText status={license.status} />
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap font-mono tabular-nums text-[#111111] dark:text-neutral-300">
+                          <span className="flex items-center gap-1.5">
+                            <Smartphone className="w-3.5 h-3.5 text-[#888888] dark:text-[#707070]" />
+                            <span>
+                              {devicesUsed} / {deviceLimitText}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap font-mono tabular-nums text-[#666666] dark:text-[#A1A1A1] text-[11px]">
+                          {license.createdAt
+                            ? new Date(license.createdAt).toLocaleDateString()
+                            : '—'}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap font-mono tabular-nums text-[#666666] dark:text-[#A1A1A1] text-[11px]">
+                          {license.expiresAt
+                            ? new Date(license.expiresAt).toLocaleDateString()
+                            : license.activationMode === 'first_use' && !license.activatedAt
+                            ? 'No 1º uso'
+                            : 'Vitalícia'}
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => handleCopyKey(license, e)}
+                              className="text-xs h-7 px-2.5"
+                              icon={
+                                copiedId === license.id ? (
+                                  <Check className="w-3 h-3 text-emerald-500" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )
+                              }
+                              title="Copiar Chave da Licença"
+                            >
+                              {copiedId === license.id ? 'Copiada' : 'Copiar'}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => onSelectLicense(license.id)}
+                              className="text-xs h-7 px-2.5"
+                              icon={<ExternalLink className="w-3 h-3" />}
+                            >
+                              Ver
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Pagination Controls */}
