@@ -494,17 +494,50 @@ export const api = {
     return [];
   },
 
-  async createAdmin(payload: { email: string; role: AdminRole; password?: string }): Promise<AdminUser> {
+  async createAdmin(payload: {
+    uid?: string;
+    email: string;
+    role: AdminRole;
+    cargo?: AdminRole;
+    password?: string;
+    status?: 'active' | 'disabled';
+  }): Promise<AdminUser> {
+    const roleValue = (payload.role || payload.cargo || 'ADMIN') as AdminRole;
+    const uidValue = payload.uid?.trim() || `adm_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    const body = {
+      uid: uidValue,
+      role: roleValue,
+      cargo: roleValue,
+      email: payload.email.trim(),
+      password: payload.password ? payload.password.trim() : undefined,
+      status: payload.status || 'active',
+    };
+
     return apiRequest<AdminUser>('/admin/admins', {
       method: 'POST',
-      body: payload,
+      body,
     });
   },
 
-  async updateAdmin(uid: string, payload: { role?: AdminRole; status?: 'active' | 'disabled' }): Promise<AdminUser> {
+  async updateAdmin(uid: string, payload: { role?: AdminRole; cargo?: AdminRole; status?: 'active' | 'disabled' }): Promise<AdminUser> {
+    const body: Record<string, any> = { ...payload };
+    if (payload.role) {
+      body.role = payload.role;
+      body.cargo = payload.role;
+    } else if (payload.cargo) {
+      body.role = payload.cargo;
+      body.cargo = payload.cargo;
+    }
     return apiRequest<AdminUser>(`/admin/admins/${encodeURIComponent(uid)}`, {
       method: 'PATCH',
-      body: payload,
+      body,
+    });
+  },
+
+  async deleteAdmin(uid: string): Promise<{ success: boolean }> {
+    return apiRequest<any>(`/admin/admins/${encodeURIComponent(uid)}`, {
+      method: 'DELETE',
     });
   },
 
