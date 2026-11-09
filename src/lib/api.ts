@@ -329,7 +329,30 @@ export const api = {
   },
 
   async getKey(id: string): Promise<LicenseKey> {
-    return apiRequest<LicenseKey>(`/admin/keys/${encodeURIComponent(id)}`);
+    try {
+      const res = await apiRequest<any>(`/admin/keys/${encodeURIComponent(id)}`);
+      let keyData: any = res;
+      if (res && typeof res === 'object') {
+        if (res.key && typeof res.key === 'object') keyData = res.key;
+        else if (res.license && typeof res.license === 'object') keyData = res.license;
+        else if (res.data && typeof res.data === 'object') {
+          keyData = res.data.key || res.data.license || res.data;
+        }
+      }
+      return keyData;
+    } catch (err: unknown) {
+      // Fallback: search key in getKeys() if single endpoint is not implemented
+      try {
+        const allKeys = await api.getKeys({ limit: 300 });
+        const found = allKeys.keys.find(
+          (k) => k.id === id || k.key === id || (k as any).keyId === id
+        );
+        if (found) return found;
+      } catch {
+        // ignore fallback error
+      }
+      throw err;
+    }
   },
 
   async createKey(payload: CreateLicensePayload): Promise<{ key: string; license: LicenseKey } | LicenseKey> {
@@ -355,14 +378,33 @@ export const api = {
 
   async updateKeyMetadata(id: string, metadata: {
     clientName?: string;
+    client_name?: string;
     orderReference?: string;
+    order_reference?: string;
+    reference?: string;
     notes?: string;
     deviceLimit?: number;
+    device_limit?: number;
   }): Promise<{ success: boolean; license?: LicenseKey }> {
-    return apiRequest<any>(`/admin/keys/${encodeURIComponent(id)}/metadata`, {
-      method: 'PATCH',
-      body: metadata,
-    });
+    const payload = {
+      ...metadata,
+      client_name: metadata.clientName || metadata.client_name,
+      order_reference: metadata.orderReference || metadata.order_reference,
+      reference: metadata.orderReference || metadata.reference,
+      device_limit: metadata.deviceLimit ?? metadata.device_limit,
+    };
+    try {
+      return await apiRequest<any>(`/admin/keys/${encodeURIComponent(id)}/metadata`, {
+        method: 'PATCH',
+        body: payload,
+      });
+    } catch {
+      // Fallback to PATCH /admin/keys/:id
+      return await apiRequest<any>(`/admin/keys/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: payload,
+      });
+    }
   },
 
   async archiveKey(id: string): Promise<{ success: boolean }> {

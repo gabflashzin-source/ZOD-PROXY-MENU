@@ -31,10 +31,12 @@ import {
 } from 'lucide-react';
 import {
   formatFullDateTime,
+  formatSimpleDate,
   getRealLicenseStatus,
   getRemainingTime,
   markKeyAsDeletedLocally,
   normalizeLicense,
+  parseTimestampToDate,
 } from '../lib/licenseUtils';
 
 interface LicenseDetailPageProps {
@@ -51,6 +53,7 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  const [externalDevices, setExternalDevices] = useState<ConnectedDevice[]>([]);
 
   // Second-by-second ticker for live countdown timer
   useEffect(() => {
@@ -101,14 +104,41 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getKey(licenseId);
+      const [keyRes, devsRes] = await Promise.allSettled([
+        api.getKey(licenseId),
+        api.getDevices(),
+      ]);
+
+      let data: any = null;
+      if (keyRes.status === 'fulfilled') {
+        data = keyRes.value;
+      } else {
+        throw keyRes.reason;
+      }
+
       const normalized = normalizeLicense(data);
       setLicense(normalized);
+
       // Pre-populate edit fields
       setEditClientName(normalized.clientName || '');
       setEditOrderRef(normalized.orderReference || '');
       setEditNotes(normalized.notes || '');
       setEditDeviceLimit(normalized.deviceLimit ?? 1);
+
+      // Merge devices from /admin/devices if available
+      if (devsRes.status === 'fulfilled' && Array.isArray(devsRes.value?.devices)) {
+        const matching = devsRes.value.devices.filter((d: any) => {
+          const dLicId = String(d.licenseId || d.license_id || '');
+          const dKey = String(d.key || d.licenseKey || '');
+          return (
+            dLicId === licenseId ||
+            dLicId === normalized.id ||
+            (normalized.key && dLicId === normalized.key) ||
+            (normalized.key && dKey === normalized.key)
+          );
+        });
+        setExternalDevices(matching);
+      }
     } catch (err: unknown) {
       console.error('Failed to load license detail:', err);
       if (err instanceof ApiError) {
@@ -312,41 +342,94 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
     return 'active';
   };
 
-  const rawDevices = (license as any)?.devices;
-
   const connectedDevices: ConnectedDevice[] = useMemo(() => {
-    if (!license || !rawDevices) return [];
-    if (Array.isArray(rawDevices)) {
-      return rawDevices.map((d: any, idx: number) => ({
-        id: String(d?.id || d?.deviceId || d?.device_id || `dev-${idx}`),
-        deviceId: String(d?.deviceId || d?.device_id || d?.id || `DEV-${idx}`),
-        deviceName: d?.deviceName || d?.device_name || d?.name || 'Dispositivo Cliente',
-        deviceModel: d?.deviceModel || d?.device_model || d?.model,
+    if (!license) return [];
+    const list: ConnectedDevice[] = [];
+    const seenHwids = new Set<string>();
+
+    const addDevice = (d: any, idx: number) => {
+      if (!d) return;
+      const hwid = String(d.deviceId || d.device_id || d.hwid || d.id || `dev-${idx}`).trim();
+      if (!hwid || seenHwids.has(hwid)) return;
+      seenHwids.add(hwid);
+
+      const parsedFirst = parseTimestampToDate(
+        d.firstConnectedAt || d.first_connected_at || d.createdAt || d.created_at || d.activatedAt || d.timestamp
+      );
+      const parsedLast = parseTimestampToDate(
+        d.lastActivityAt || d.last_activity_at || d.last_seen || d.lastSeen || d.updatedAt || d.timestamp
+      );
+
+      list.push({
+        id: String(d.id || hwid),
+        deviceId: hwid,
+        deviceName: d.deviceName || d.device_name || d.name || 'Dispositivo Cliente',
+        deviceModel: d.deviceModel || d.device_model || d.model || 'Android',
         licenseId: license.id,
-        firstConnectedAt: typeof d?.firstConnectedAt === 'string' ? d.firstConnectedAt : d?.first_connected_at,
-        lastActivityAt: typeof d?.lastActivityAt === 'string' ? d.lastActivityAt : d?.last_activity_at,
-        status: toDeviceStatus(d?.status || d?.state),
-      }));
+        firstConnectedAt: parsedFirst ? parsedFirst.toISOString() : undefined,
+        lastActivityAt: parsedLast ? parsedLast.toISOString() : undefined,
+        status: toDeviceStatus(d.status || d.state),
+      });
+    };
+
+    // 1. Devices from normalized license
+    if (Array.isArray(license.devices)) {
+      license.devices.forEach((d: any, idx: number) => addDevice(d, idx));
     }
-    if (typeof rawDevices === 'object' && rawDevices !== null) {
-      return Object.entries(rawDevices).map(([k, v]: [string, any], idx: number) => {
-        const valObj = typeof v === 'object' && v !== null ? v : {};
-        return {
-          id: String(valObj?.id || valObj?.deviceId || valObj?.device_id || k),
-          deviceId: String(valObj?.deviceId || valObj?.device_id || k),
-          deviceName: valObj?.deviceName || valObj?.device_name || valObj?.name || 'Dispositivo Cliente',
-          deviceModel: valObj?.deviceModel || valObj?.device_model || valObj?.model,
-          licenseId: license.id,
-          firstConnectedAt: typeof valObj?.firstConnectedAt === 'string' ? valObj.firstConnectedAt : valObj?.first_connected_at,
-          lastActivityAt: typeof valObj?.lastActivityAt === 'string' ? valObj.lastActivityAt : valObj?.last_activity_at,
-          status: toDeviceStatus(valObj?.status || valObj?.state),
-        };
+
+    // 2. Devices from raw license document
+    const rawDevs = (license as any)?.device_list || (license as any)?.connected_devices || (license as any)?.devices;
+    if (Array.isArray(rawDevs)) {
+      rawDevs.forEach((d: any, idx: number) => addDevice(d, idx));
+    } else if (typeof rawDevs === 'object' && rawDevs !== null) {
+      Object.entries(rawDevs).forEach(([k, v], idx) => {
+        if (typeof v === 'object' && v !== null) {
+          addDevice({ deviceId: k, ...(v as any) }, idx);
+        } else {
+          addDevice({ deviceId: k }, idx);
+        }
       });
     }
-    return [];
-  }, [rawDevices, license]);
+
+    // 3. Devices from external /admin/devices
+    if (Array.isArray(externalDevices)) {
+      externalDevices.forEach((d: any, idx: number) => addDevice(d, idx));
+    }
+
+    // 4. Root single device fields
+    const rootHwid = (license as any)?.device_id || (license as any)?.deviceId || (license as any)?.hwid;
+    if (rootHwid) {
+      addDevice({
+        deviceId: rootHwid,
+        deviceName: (license as any)?.device_name || (license as any)?.deviceName,
+        deviceModel: (license as any)?.device_model || (license as any)?.deviceModel,
+        firstConnectedAt: license.activatedAt || license.createdAt,
+        lastActivityAt: (license as any)?.last_activity_at || license.activatedAt,
+        status: 'active',
+      }, list.length);
+    }
+
+    return list;
+  }, [license, externalDevices]);
 
   const activeDevices = connectedDevices.filter((d) => d.status !== 'unlinked');
+  const realStatus = license ? getRealLicenseStatus(license) : 'active';
+
+  const countdown = useMemo(() => {
+    if (!license) return null;
+    return getRemainingTime(license);
+  }, [license, currentTime]);
+
+  const firstActivationDate = useMemo(() => {
+    if (!license) return null;
+    return (
+      license.activatedAt ||
+      (license as any).activated_at ||
+      (license as any).first_connected_at ||
+      connectedDevices[0]?.firstConnectedAt ||
+      null
+    );
+  }, [license, connectedDevices]);
 
   if (loading) {
     return (
@@ -384,12 +467,6 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
       </div>
     );
   }
-
-  const realStatus = license ? getRealLicenseStatus(license) : 'active';
-  const countdown = useMemo(() => {
-    if (!license) return null;
-    return getRemainingTime(license);
-  }, [license, currentTime]);
 
   const keyDisplay = license.keyPrefix
     ? `${license.keyPrefix}••••••••${license.keySuffix || ''}`
@@ -561,8 +638,8 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
 
               <div className="p-3 rounded-lg border border-[#E8E8E8] dark:border-[#1C1C1C] bg-neutral-50/50 dark:bg-[#161616]/40">
                 <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Referência do Pedido</span>
-                <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block truncate">
-                  {license.orderReference || '—'}
+                <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block truncate font-medium">
+                  {license.orderReference || (license as any).order_reference || (license as any).reference || (license as any).orderId || 'Sem referência'}
                 </span>
               </div>
 
@@ -592,14 +669,22 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
               <div className="p-3 rounded-lg border border-[#E8E8E8] dark:border-[#1C1C1C] bg-neutral-50/50 dark:bg-[#161616]/40">
                 <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Data & Hora de Expiração</span>
                 <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block font-semibold">
-                  {formatFullDateTime(license.expiresAt || (license as any).expires_at)}
+                  {license.expiresAt
+                    ? formatFullDateTime(license.expiresAt)
+                    : license.activationMode === 'first_use' && !firstActivationDate
+                    ? `Aguardando 1º uso (+${license.duration || 30} ${license.durationUnit === 'hours' ? 'hora(s)' : license.durationUnit === 'minutes' ? 'minuto(s)' : 'dia(s)'})`
+                    : 'Vitalícia (Sem expiração)'}
                 </span>
               </div>
 
               <div className="p-3 rounded-lg border border-[#E8E8E8] dark:border-[#1C1C1C] bg-neutral-50/50 dark:bg-[#161616]/40">
                 <span className="text-[#888888] dark:text-[#707070] block text-[10px] uppercase font-sans">Primeiro Handshake / Ativação</span>
-                <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block">
-                  {formatFullDateTime((license as any).activatedAt || (license as any).activated_at || (license as any).first_connected_at)}
+                <span className="text-[#111111] dark:text-neutral-200 mt-0.5 block font-semibold">
+                  {firstActivationDate ? (
+                    formatFullDateTime(firstActivationDate)
+                  ) : (
+                    <span className="text-amber-600 dark:text-amber-400 font-medium">Aguardando 1º login no APK</span>
+                  )}
                 </span>
               </div>
 
@@ -697,10 +782,10 @@ export const LicenseDetailPage: React.FC<LicenseDetailPageProps> = ({ licenseId,
                           {dev.deviceId}
                         </td>
                         <td className="py-3 px-2 font-mono text-[#666666] dark:text-neutral-400 text-[11px]">
-                          {dev.firstConnectedAt ? new Date(dev.firstConnectedAt).toLocaleDateString() : '—'}
+                          {dev.firstConnectedAt ? formatFullDateTime(dev.firstConnectedAt) : '—'}
                         </td>
                         <td className="py-3 px-2 font-mono text-[#666666] dark:text-neutral-400 text-[11px]">
-                          {dev.lastActivityAt ? new Date(dev.lastActivityAt).toLocaleDateString() : '—'}
+                          {dev.lastActivityAt ? formatFullDateTime(dev.lastActivityAt) : '—'}
                         </td>
                         <td className="py-3 px-2 text-right">
                           {canMutate && dev.status !== 'unlinked' && (

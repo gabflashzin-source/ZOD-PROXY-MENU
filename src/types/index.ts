@@ -20,8 +20,8 @@ export interface ConnectedDevice {
   deviceModel?: string;
   licenseId: string;
   clientName?: string;
-  firstConnectedAt: string;
-  lastActivityAt: string;
+  firstConnectedAt?: string;
+  lastActivityAt?: string;
   status: 'active' | 'offline' | 'unlinked';
   ipAddress?: string;
 }
