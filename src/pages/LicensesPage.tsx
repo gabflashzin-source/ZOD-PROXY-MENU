@@ -27,6 +27,7 @@ import {
   getDeletedKeyIds,
   normalizeLicense,
 } from '../lib/licenseUtils';
+import { enterpriseStore, isAppMatch } from '../lib/enterpriseStore';
 
 interface LicensesPageProps {
   onSelectLicense: (id: string) => void;
@@ -46,6 +47,7 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [appFilter, setAppFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'createdAt' | 'clientName' | 'status' | 'expiresAt'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -105,6 +107,9 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
         if (statusFilter !== 'all' && realStatus !== statusFilter) {
           return false;
         }
+        if (appFilter !== 'all' && !isAppMatch(appFilter, k.appId)) {
+          return false;
+        }
 
         if (!searchQuery.trim()) return true;
         const q = searchQuery.toLowerCase();
@@ -133,7 +138,7 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
         if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
         return 0;
       });
-  }, [keys, searchQuery, sortBy, sortOrder, statusFilter]);
+  }, [keys, searchQuery, sortBy, sortOrder, statusFilter, appFilter]);
 
   const totalPages = Math.ceil(filteredKeys.length / pageSize) || 1;
   const paginatedKeys = useMemo(() => {
@@ -221,16 +226,33 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
 
       {/* Search and Table Filters */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="max-w-md w-full">
-          <Input
-            placeholder="Buscar por cliente, pedido, chave ou ID..."
-            value={searchQuery}
+        <div className="flex flex-col sm:flex-row items-center gap-2 max-w-lg w-full">
+          <div className="w-full">
+            <Input
+              placeholder="Buscar por cliente, pedido, chave ou ID..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              leftIcon={<Search className="w-4 h-4" />}
+            />
+          </div>
+          <select
+            value={appFilter}
             onChange={(e) => {
-              setSearchQuery(e.target.value);
+              setAppFilter(e.target.value);
               setCurrentPage(1);
             }}
-            leftIcon={<Search className="w-4 h-4" />}
-          />
+            className="w-full sm:w-auto text-xs bg-white dark:bg-[#111111] border border-[#E8E8E8] dark:border-[#252525] rounded-lg px-2.5 py-2 font-medium text-[#111111] dark:text-white shrink-0"
+          >
+            <option value="all">Todos os Apps</option>
+            {enterpriseStore.getApplications().map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="text-xs font-mono text-[#888888] dark:text-[#707070] self-center">
           Mostrando <span className="text-[#111111] dark:text-white font-semibold tabular-nums">{filteredKeys.length}</span> registros
@@ -450,11 +472,15 @@ export const LicensesPage: React.FC<LicensesPageProps> = ({
                           {formatSimpleDate(license.createdAt)}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap font-mono tabular-nums text-[#666666] dark:text-[#A1A1A1] text-[11px]">
-                          {license.expiresAt
-                            ? formatSimpleDate(license.expiresAt)
-                            : license.activationMode === 'first_use' && !license.activatedAt
-                            ? 'No 1º uso'
-                            : 'Vitalícia'}
+                          {license.duration === -1 || (license as any).durationUnit === 'lifetime' || (license as any).isLifetime ? (
+                            <span className="text-blue-500 font-semibold">Vitalícia (Perpétua)</span>
+                          ) : license.expiresAt ? (
+                            formatSimpleDate(license.expiresAt)
+                          ) : license.activationMode === 'first_use' && !license.activatedAt ? (
+                            'No 1º uso'
+                          ) : (
+                            'Vitalícia'
+                          )}
                         </td>
                         <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1.5">
