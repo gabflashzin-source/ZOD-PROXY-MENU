@@ -22,42 +22,18 @@ import {
   ShieldCheck,
   CheckCircle2,
   Sparkles,
-  Layers,
-  ChevronDown,
-  Wifi,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth';
 import { api } from '../../lib/api';
-import { enterpriseStore } from '../../lib/enterpriseStore';
-import { ZodApplication } from '../../types';
 import { Button } from '../ui/Button';
-import { useTheme } from '../../lib/theme';
+import { useTheme, ThemeMode } from '../../lib/theme';
 
-export type ActiveTab =
-  | 'overview'
-  | 'products'
-  | 'apps'
-  | 'app-workspace'
-  | 'product-workspace'
-  | 'licenses'
-  | 'customers'
-  | 'devices'
-  | 'sessions'
-  | 'audit'
-  | 'admins'
-  | 'settings'
-  | 'profile'
-  | 'store'
-  | 'discord'
-  | 'integrations'
-  | 'infra';
+export type ActiveTab = 'overview' | 'licenses' | 'devices' | 'audit' | 'admins' | 'settings' | 'profile';
 
 interface AppLayoutProps {
   activeTab: ActiveTab;
   onNavigate: (tab: ActiveTab, detailId?: string) => void;
   onOpenCreateLicense?: () => void;
-  selectedAppId?: string;
-  onSelectAppId?: (id: string) => void;
   children: React.ReactNode;
 }
 
@@ -75,17 +51,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   activeTab,
   onNavigate,
   onOpenCreateLicense,
-  selectedAppId = 'all',
-  onSelectAppId,
   children,
 }) => {
   const { user, role, logout, canMutate } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
 
   // Sidebar collapse state
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('zod_sidebar_collapsed') === 'true';
+      return localStorage.getItem('azod_sidebar_collapsed') === 'true';
     } catch {
       return false;
     }
@@ -95,7 +69,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     setSidebarCollapsed((prev) => {
       const next = !prev;
       try {
-        localStorage.setItem('zod_sidebar_collapsed', String(next));
+        localStorage.setItem('azod_sidebar_collapsed', String(next));
       } catch {
         // ignore
       }
@@ -107,7 +81,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [apiVersion, setApiVersion] = useState<string>('4.0.0');
   const [pinging, setPinging] = useState(false);
-  const [apps, setApps] = useState<ZodApplication[]>([]);
 
   // Prevent background scrolling when mobile drawer is open
   useEffect(() => {
@@ -136,25 +109,31 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
   useEffect(() => {
     checkWorkerHealth();
-    setApps(enterpriseStore.getApplications());
     const interval = setInterval(checkWorkerHealth, 60000);
     return () => clearInterval(interval);
   }, []);
 
   const navGroups: NavGroup[] = [
     {
-      label: 'Menu Principal',
+      label: 'Visão Geral',
       items: [
-        { id: 'overview', label: 'Visão Geral', icon: <Activity className="w-4 h-4" /> },
-        { id: 'products', label: 'Produtos', icon: <Layers className="w-4 h-4" /> },
-        { id: 'licenses', label: 'Gerenciamento de Chaves', icon: <KeyRound className="w-4 h-4" /> },
-        { id: 'customers', label: 'Clientes', icon: <Users className="w-4 h-4" /> },
-        { id: 'devices', label: 'Dispositivos', icon: <Smartphone className="w-4 h-4" /> },
-        { id: 'sessions', label: 'Sessões', icon: <Wifi className="w-4 h-4" /> },
-        { id: 'audit', label: 'Logs e Auditoria', icon: <ScrollText className="w-4 h-4" /> },
-        { id: 'admins', label: 'Administradores', icon: <ShieldCheck className="w-4 h-4" /> },
+        { id: 'overview', label: 'Painel Geral', icon: <Activity className="w-4 h-4" /> },
+      ],
+    },
+    {
+      label: 'Gestão Central',
+      items: [
+        { id: 'licenses', label: 'Licenças de Software', icon: <KeyRound className="w-4 h-4" /> },
+        { id: 'devices', label: 'Dispositivos & HWID', icon: <Smartphone className="w-4 h-4" /> },
+        { id: 'audit', label: 'Auditoria & Logs', icon: <ScrollText className="w-4 h-4" /> },
+      ],
+    },
+    {
+      label: 'Administração',
+      items: [
+        { id: 'admins', label: 'Administradores', icon: <Users className="w-4 h-4" /> },
         { id: 'settings', label: 'Configurações', icon: <Settings className="w-4 h-4" /> },
-        { id: 'profile', label: 'Meu Perfil', icon: <User className="w-4 h-4" /> },
+        { id: 'profile', label: 'Perfil de Acesso', icon: <User className="w-4 h-4" /> },
       ],
     },
   ];
@@ -167,39 +146,19 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const getBreadcrumbLabel = (tab: ActiveTab) => {
     switch (tab) {
       case 'overview':
-        return { category: 'Painel Executivo', page: 'Visão Geral' };
-      case 'products':
-      case 'apps':
-        return { category: 'Central ZOD STORE', page: 'Produtos' };
-      case 'app-workspace':
-      case 'product-workspace':
-        return { category: 'Módulo do Produto', page: 'Ambiente Independente' };
+        return { category: 'Visão Geral', page: 'Painel Geral' };
       case 'licenses':
-        return { category: 'Central ZOD STORE', page: 'Gerenciamento de Chaves' };
-      case 'customers':
-        return { category: 'Central ZOD STORE', page: 'Clientes' };
+        return { category: 'Gestão Central', page: 'Licenças' };
       case 'devices':
-        return { category: 'Central ZOD STORE', page: 'Dispositivos HWID' };
-      case 'sessions':
-        return { category: 'Central ZOD STORE', page: 'Sessões Conectadas' };
+        return { category: 'Gestão Central', page: 'Dispositivos' };
       case 'audit':
-        return { category: 'Governança', page: 'Logs e Auditoria' };
+        return { category: 'Gestão Central', page: 'Auditoria' };
       case 'admins':
-        return { category: 'Governança', page: 'Administradores' };
+        return { category: 'Administração', page: 'Administradores' };
       case 'settings':
-        return { category: 'Governança', page: 'Configurações' };
+        return { category: 'Administração', page: 'Configurações' };
       case 'profile':
-        return { category: 'Governança', page: 'Meu Perfil' };
-      case 'store':
-        return { category: 'Recursos', page: 'Loja & Planos' };
-      case 'discord':
-        return { category: 'Recursos', page: 'Discord & Bot' };
-      case 'integrations':
-        return { category: 'Recursos', page: 'Integrações' };
-      case 'infra':
-        return { category: 'Recursos', page: 'Infraestrutura & DB' };
-      default:
-        return { category: 'ZOD STORE', page: 'Painel' };
+        return { category: 'Administração', page: 'Meu Perfil' };
     }
   };
 
@@ -217,15 +176,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         <div className="h-16 px-4 flex items-center justify-between border-b border-[#E8E8E8] dark:border-[#252525]">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-[#111111] dark:bg-white text-white dark:text-[#050505] flex items-center justify-center font-bold text-xs tracking-wider shrink-0 shadow-xs">
-              ZOD
+              AZOD
             </div>
             {!sidebarCollapsed && (
               <div className="min-w-0 flex-1">
-                <span className="font-bold text-sm tracking-tight text-[#111111] dark:text-white block leading-none truncate">
-                  ZOD STORE
+                <span className="font-semibold text-sm tracking-tight text-[#111111] dark:text-white block leading-none truncate">
+                  AZOD Manager
                 </span>
                 <span className="text-[10px] text-[#888888] dark:text-[#707070] font-mono tracking-tight mt-1 block truncate">
-                  Enterprise Platform · v{apiVersion}
+                  v{apiVersion} · CF Worker v4.0
                 </span>
               </div>
             )}
@@ -245,9 +204,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           </button>
         </div>
 
-        {/* Global Action Button */}
+        {/* Quick Action Button */}
         {!sidebarCollapsed ? (
-          <div className="p-3 border-b border-[#E8E8E8] dark:border-[#252525] space-y-2">
+          <div className="p-3 border-b border-[#E8E8E8] dark:border-[#252525]">
             <Button
               variant="primary"
               size="sm"
@@ -337,7 +296,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                   }`}
                 />
                 <span className="text-[#111111] dark:text-neutral-300 font-medium">
-                  {apiOnline === true ? 'CF Worker v4.0 Online' : apiOnline === false ? 'Inacessível' : 'Verificando...'}
+                  {apiOnline === true ? 'Conectado · Online' : apiOnline === false ? 'Inacessível' : 'Verificando...'}
                 </span>
               </div>
             </div>
@@ -349,7 +308,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           {!sidebarCollapsed ? (
             <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold text-[#111111] dark:text-white truncate font-mono">
-                {user?.email || 'admin@zod'}
+                {user?.email || 'admin@azod'}
               </div>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="text-[10px] text-[#888888] dark:text-[#A1A1A1] font-mono uppercase tracking-wider">
@@ -363,7 +322,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           ) : (
             <div className="w-full flex justify-center">
               <div className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-[#161616] border border-[#E8E8E8] dark:border-[#252525] flex items-center justify-center text-xs font-bold font-mono">
-                {(user?.email?.[0] || 'Z').toUpperCase()}
+                {(user?.email?.[0] || 'A').toUpperCase()}
               </div>
             </div>
           )}
@@ -392,7 +351,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-        {/* Topbar: Breadcrumbs + App Switcher + Theme switcher + Role + Quick action */}
+        {/* Topbar: Breadcrumbs + Worker indicator + Theme switcher + Role + Quick action */}
         <header className="h-14 px-4 md:px-8 border-b border-[#E8E8E8] dark:border-[#252525] flex items-center justify-between gap-4 bg-white/90 dark:bg-[#050505]/90 backdrop-blur-md sticky top-0 z-30">
           {/* Left Zone: Breadcrumb hierarchy */}
           <div className="flex items-center gap-3 min-w-0">
@@ -405,7 +364,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             </button>
 
             <div className="flex items-center gap-1.5 text-xs font-medium text-[#888888] dark:text-[#707070] min-w-0">
-              <span className="font-mono font-bold text-[#111111] dark:text-white tracking-wider shrink-0">ZOD STORE</span>
+              <span className="font-mono font-bold text-[#111111] dark:text-white tracking-wider shrink-0">AZOD</span>
               <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-40 hidden sm:inline" />
               <span className="hidden sm:inline font-mono text-[11px] uppercase tracking-wider shrink-0">
                 {breadcrumb.category}
@@ -419,9 +378,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
           {/* Right Zone: Controls */}
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-            {/* Live API Health in topbar */}
+            {/* Live API Health dot in topbar */}
             <div
-              className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#E8E8E8] dark:border-[#252525] bg-white dark:bg-[#111111] text-[11px] font-mono text-[#666666] dark:text-[#A1A1A1]"
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#E8E8E8] dark:border-[#252525] bg-white dark:bg-[#111111] text-[11px] font-mono text-[#666666] dark:text-[#A1A1A1]"
               title={`Worker API v${apiVersion}`}
             >
               <span
@@ -515,7 +474,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         {/* Footer with Pajé DEV credit on every page */}
         <footer className="border-t border-[#E8E8E8] dark:border-[#252525] py-4 px-4 md:px-8 bg-white/50 dark:bg-[#070707]/60 text-center text-xs text-[#888888] dark:text-[#707070]">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2 max-w-7xl mx-auto font-mono text-[11px]">
-            <span>ZOD STORE Enterprise Management Platform · Cloudflare Worker v{apiVersion}</span>
+            <span>AZOD Software License Manager · Cloudflare Worker v{apiVersion}</span>
             <span className="font-medium text-[#111111] dark:text-neutral-300">
               Todos os créditos de criação para Pajé DEV
             </span>
@@ -540,9 +499,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                       data-logo="azod"
                       className="w-7 h-7 rounded-lg bg-[#111111] dark:bg-white text-white dark:text-[#050505] flex items-center justify-center font-bold text-xs azod-logo-badge"
                     >
-                      ZOD
+                      AZOD
                     </div>
-                    <span className="font-bold text-sm text-[#111111] dark:text-white">ZOD STORE</span>
+                    <span className="font-semibold text-sm text-[#111111] dark:text-white">AZOD Manager</span>
                   </div>
                   <button
                     onClick={() => setMobileMenuOpen(false)}
@@ -564,7 +523,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                         <button
                           key={item.id}
                           onClick={() => handleNavClick(item.id)}
-                          className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-medium rounded-lg text-left transition-colors min-h-[40px] ${
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs font-medium rounded-lg text-left transition-colors min-h-[44px] ${
                             activeTab === item.id
                               ? 'bg-neutral-200/80 text-[#111111] dark:bg-[#161616] dark:text-white font-semibold'
                               : 'text-[#666666] dark:text-[#A1A1A1] hover:text-[#111111] dark:hover:text-white'
@@ -626,7 +585,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-[#E8E8E8] dark:border-[#252525] space-y-2">
+              <div className="pt-3 border-t border-[#E8E8E8] dark:border-[#252525] space-y-3">
                 <div className="text-xs text-[#888888] dark:text-[#A1A1A1] font-mono truncate">
                   {user?.email}
                 </div>

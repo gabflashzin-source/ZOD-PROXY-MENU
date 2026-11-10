@@ -3,7 +3,6 @@ import { Modal } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input, Select, Textarea } from './ui/Input';
 import { api, ApiError } from '../lib/api';
-import { enterpriseStore } from '../lib/enterpriseStore';
 import { useToast } from './ui/Toast';
 import type { CreateLicensePayload, LicenseKey } from '../types';
 import { Copy, Check, ShieldAlert } from 'lucide-react';
@@ -12,14 +11,12 @@ interface CreateLicenseModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (license: LicenseKey, rawKey?: string) => void;
-  defaultAppId?: string;
 }
 
 export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  defaultAppId = 'azod',
 }) => {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
@@ -29,8 +26,7 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
   const [clientName, setClientName] = useState('');
   const [orderReference, setOrderReference] = useState('');
   const [notes, setNotes] = useState('');
-  const [selectedAppId, setSelectedAppId] = useState(defaultAppId);
-  const [durationPreset, setDurationPreset] = useState<'1d' | '7d' | '15d' | '30d' | 'lifetime' | 'custom'>('30d');
+  const [durationPreset, setDurationPreset] = useState<'1d' | '7d' | '15d' | '30d' | 'custom'>('30d');
   const [customDurationValue, setCustomDurationValue] = useState<number>(30);
   const [customDurationUnit, setCustomDurationUnit] = useState<'seconds' | 'minutes' | 'hours' | 'days'>('days');
   const [deviceLimitPreset, setDeviceLimitPreset] = useState<'1' | '2' | '3' | 'unlimited' | 'custom'>('1');
@@ -45,7 +41,6 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
     setClientName('');
     setOrderReference('');
     setNotes('');
-    setSelectedAppId('proxy-menu');
     setDurationPreset('30d');
     setCustomDurationValue(30);
     setCustomDurationUnit('days');
@@ -62,7 +57,7 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
     onClose();
   };
 
-  const getComputedDuration = (): { duration: number; durationUnit: 'seconds' | 'minutes' | 'hours' | 'days' | 'lifetime' } => {
+  const getComputedDuration = (): { duration: number; durationUnit: 'seconds' | 'minutes' | 'hours' | 'days' } => {
     switch (durationPreset) {
       case '1d':
         return { duration: 1, durationUnit: 'days' };
@@ -72,8 +67,6 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
         return { duration: 15, durationUnit: 'days' };
       case '30d':
         return { duration: 30, durationUnit: 'days' };
-      case 'lifetime':
-        return { duration: -1, durationUnit: 'lifetime' };
       case 'custom':
         return { duration: Number(customDurationValue) || 1, durationUnit: customDurationUnit };
     }
@@ -115,8 +108,6 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
       durationUnit,
       deviceLimit,
       activationMode,
-      appId: selectedAppId,
-      isLifetime: duration === -1 || durationUnit === 'lifetime',
     };
 
     try {
@@ -234,23 +225,6 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <label className="block text-xs font-medium text-[#111111] dark:text-neutral-200">
-              Produto Destino
-            </label>
-            <select
-              value={selectedAppId}
-              onChange={(e) => setSelectedAppId(e.target.value)}
-              className="w-full text-xs bg-white dark:bg-[#111111] border border-[#E8E8E8] dark:border-[#252525] rounded-lg px-3 py-2 font-medium text-[#111111] dark:text-white"
-            >
-              {enterpriseStore.getApplications().map((app) => (
-                <option key={app.id} value={app.id}>
-                  {app.name} ({app.category} · v{app.version})
-                </option>
-              ))}
-            </select>
-          </div>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Nome do Cliente"
@@ -272,8 +246,8 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
             <label className="block text-xs font-medium text-[#111111] dark:text-neutral-200">
               Período de Validade
             </label>
-            <div className="grid grid-cols-6 gap-1 p-1 bg-neutral-100 dark:bg-[#161616] rounded-lg border border-[#E8E8E8] dark:border-[#252525]">
-              {(['1d', '7d', '15d', '30d', 'lifetime', 'custom'] as const).map((preset) => (
+            <div className="grid grid-cols-5 gap-1.5 p-1 bg-neutral-100 dark:bg-[#161616] rounded-lg border border-[#E8E8E8] dark:border-[#252525]">
+              {(['1d', '7d', '15d', '30d', 'custom'] as const).map((preset) => (
                 <button
                   key={preset}
                   type="button"
@@ -288,7 +262,6 @@ export const CreateLicenseModal: React.FC<CreateLicenseModalProps> = ({
                   {preset === '7d' && '7 Dias'}
                   {preset === '15d' && '15 Dias'}
                   {preset === '30d' && '30 Dias'}
-                  {preset === 'lifetime' && 'Vitalícia'}
                   {preset === 'custom' && 'Outro'}
                 </button>
               ))}

@@ -1,11 +1,10 @@
-import { initializeApp, getApps, getApp, deleteApp, FirebaseApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import {
   getAuth,
   setPersistence,
   browserLocalPersistence,
   Auth,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User,
@@ -135,48 +134,9 @@ export function getFriendlyAuthErrorMessage(errorCode: string): string {
   }
 }
 
-/**
- * Provision a new user in Firebase Auth using a transient secondary FirebaseApp.
- * This guarantees the main administrator's active session is never disturbed.
- */
-export async function createFirebaseAuthUser(email: string, password: string): Promise<string> {
-  const config = getEffectiveFirebaseConfig();
-  if (!config.apiKey) {
-    throw new Error('Chave de API do Firebase não configurada');
-  }
-
-  const tempAppName = `prov_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const tempApp = initializeApp(
-    {
-      apiKey: config.apiKey,
-      authDomain: config.authDomain,
-      projectId: config.projectId,
-      appId: config.appId || undefined,
-      messagingSenderId: config.messagingSenderId || undefined,
-    },
-    tempAppName
-  );
-
-  try {
-    const tempAuth = getAuth(tempApp);
-    const userCredential = await createUserWithEmailAndPassword(tempAuth, email, password);
-    const uid = userCredential.user.uid;
-    await firebaseSignOut(tempAuth).catch(() => {});
-    return uid;
-  } finally {
-    try {
-      await deleteApp(tempApp);
-    } catch {
-      // ignore cleanup errors
-    }
-  }
-}
-
 export {
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
   firebaseSignOut,
   onAuthStateChanged,
 };
 export type { User, Auth };
-

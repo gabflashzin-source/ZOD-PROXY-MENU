@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../components/ui/Toast';
-import { createFirebaseAuthUser } from '../lib/firebase';
 import type { AdminUser, AdminRole } from '../types';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
@@ -19,8 +18,6 @@ import {
   RefreshCw,
   Mail,
   Key,
-  Fingerprint,
-  Sparkles,
 } from 'lucide-react';
 
 export const AdminsPage: React.FC = () => {
@@ -33,7 +30,6 @@ export const AdminsPage: React.FC = () => {
 
   // Add Admin Modal
   const [addModalOpen, setAddModalOpen] = useState(false);
-  const [newUid, setNewUid] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<AdminRole>('ADMIN');
   const [newPassword, setNewPassword] = useState('');
@@ -115,63 +111,20 @@ export const AdminsPage: React.FC = () => {
       return;
     }
 
-    if (newRole !== 'ADMIN' && newRole !== 'SUPPORT') {
-      toast.error('Cargo Inválido', 'Selecione o cargo ADMIN ou SUPPORT.');
-      return;
-    }
-
-    if (!newEmail.trim()) {
-      toast.error('E-mail Obrigatório', 'Informe o e-mail do administrador.');
+    if (newRole === 'OWNER') {
+      toast.error('Restrito', 'O cargo OWNER não pode ser concedido via painel.');
       return;
     }
 
     setActionLoading(true);
-    let resolvedUid = newUid.trim();
-
-    // If UID not manually specified, but password provided, create in Firebase Auth via isolated app
-    if (!resolvedUid && newPassword.trim()) {
-      if (newPassword.trim().length < 6) {
-        toast.error('Senha Curta', 'A senha do Firebase deve conter pelo menos 6 caracteres.');
-        setActionLoading(false);
-        return;
-      }
-
-      try {
-        resolvedUid = await createFirebaseAuthUser(newEmail.trim(), newPassword.trim());
-      } catch (fbErr: any) {
-        console.warn('Firebase user creation response:', fbErr);
-        if (fbErr?.code === 'auth/email-already-in-use') {
-          toast.warning(
-            'E-mail já existente no Firebase',
-            'Este e-mail já possui uma conta no Firebase Auth. Se desejar vincular a conta exata, informe o UID correspondente.'
-          );
-          resolvedUid = `adm_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
-        } else if (fbErr?.code === 'auth/weak-password') {
-          toast.error('Senha Fraca', 'A senha deve conter ao menos 6 caracteres.');
-          setActionLoading(false);
-          return;
-        } else {
-          resolvedUid = `adm_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
-        }
-      }
-    }
-
-    // If still no UID, generate unique UID to satisfy Worker requirement "Informe UID e cargo ADMIN ou SUPPORT"
-    if (!resolvedUid) {
-      resolvedUid = `adm_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
-    }
-
     try {
       await api.createAdmin({
-        uid: resolvedUid,
         email: newEmail.trim(),
         role: newRole,
-        cargo: newRole,
-        password: newPassword.trim() || undefined,
+        password: newPassword ? newPassword.trim() : undefined,
       });
-      toast.success('Administrador provisionado com sucesso', `Cargo: ${newRole}`);
+      toast.success('Administrador provisionado com sucesso');
       setAddModalOpen(false);
-      setNewUid('');
       setNewEmail('');
       setNewPassword('');
       await fetchAdmins();
@@ -415,31 +368,6 @@ export const AdminsPage: React.FC = () => {
         description="Provisione credenciais de equipe para acesso ao painel do Worker."
       >
         <form onSubmit={handleCreateAdmin} className="space-y-4">
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-medium text-[#111111] dark:text-neutral-200 flex items-center gap-1.5">
-                <Fingerprint className="w-3.5 h-3.5 text-[#888888] dark:text-[#707070]" />
-                <span>UID do Firebase Auth (Opcional)</span>
-              </label>
-              <button
-                type="button"
-                onClick={() =>
-                  setNewUid(`adm_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`)
-                }
-                className="text-[11px] text-[#0066CC] dark:text-[#58A6FF] hover:underline font-mono flex items-center gap-1"
-              >
-                <Sparkles className="w-3 h-3" />
-                <span>Gerar UID</span>
-              </button>
-            </div>
-            <Input
-              placeholder="Ex: uX7kP9... (ou deixe vazio para gerar/criar com senha)"
-              value={newUid}
-              onChange={(e) => setNewUid(e.target.value)}
-              helperText="Identificador exigido pelo Worker. Se o usuário já possuir conta no Firebase, cole o UID aqui."
-            />
-          </div>
-
           <Input
             label="Endereço de E-mail"
             type="email"
@@ -458,16 +386,16 @@ export const AdminsPage: React.FC = () => {
               { label: 'ADMIN — Gestão completa de chaves e dispositivos', value: 'ADMIN' },
               { label: 'SUPPORT — Visualização de auditoria e leitura', value: 'SUPPORT' },
             ]}
-            helperText="O Worker exige cargo ADMIN ou SUPPORT. Permissões OWNER são reservadas à conta proprietária."
+            helperText="Permissões OWNER são reservadas à conta proprietária principal."
           />
 
           <Input
-            label="Senha Provisória (Opcional se já tiver UID)"
+            label="Senha Provisória"
             type="password"
-            placeholder="Mínimo 6 caracteres para registro no Firebase"
+            placeholder="Mínimo 8 caracteres"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            helperText="Se preenchida e o UID estiver em branco, o usuário será criado no Firebase Auth automaticamente."
+            required
             leftIcon={<Key className="w-4 h-4" />}
           />
 
